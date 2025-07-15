@@ -84,10 +84,11 @@ export interface Schedule {
   endDate: string;
   sessions: ScheduleSession[];
   status: 'active' | 'completed' | 'archived';
+  scheduleType: 'real' | 'demo' | 'template'; // Type of schedule
   adaptations: Adaptation[];
   createdAt?: string;
   updatedAt?: string;
-  isMockData?: boolean; // Flag to identify mock/test data
+  isMockData?: boolean; // Flag to identify mock/test data (deprecated, use scheduleType)
 }
 
 export interface Adaptation {

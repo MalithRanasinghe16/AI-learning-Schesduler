@@ -4,13 +4,13 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "ts-node --esm --transpile-only server/server.ts",
+    "start": "tsx server/server.ts",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "server": "cd server && npx tsx server.ts",
-    "dev:server": "cd server && npx tsx watch server.ts"
+    "server": "tsx server/server.ts",
+    "dev:server": "tsx watch server/server.ts"
   },
   "dependencies": {
     "axios": "^1.10.0",

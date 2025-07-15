@@ -111,14 +111,10 @@ export const apiService = {
   },
 
   getTodaySessions: async () => {
-    const response = await api.get<{ sessions: StudySession[] }>(
-      "/sessions/today"
+    const response = await api.get<{ sessions: ScheduleSession[] }>(
+      "/schedule-sessions/today"
     );
     return response.data;
-  },
-
-  startSession: async (sessionId: string) => {
-    await api.post(`/sessions/${sessionId}/start`);
   },
 
   getAdaptiveSchedule: async () => {
@@ -146,11 +142,6 @@ export const apiService = {
     return response.data;
   },
 
-  completeSession: async (sessionId: string, data: any) => {
-    const response = await api.patch(`/sessions/${sessionId}/complete`, data);
-    return response.data;
-  },
-
   getAnalytics: async () => {
     const response = await api.get("/analytics/dashboard");
     return response.data;
@@ -169,6 +160,11 @@ export const apiService = {
   // Schedule Management
   getSchedules: async () => {
     const response = await api.get<{ schedules: Schedule[] }>("/schedules");
+    return response.data;
+  },
+
+  getScheduleWithSessions: async (scheduleId: string) => {
+    const response = await api.get<{ schedule: Schedule }>(`/schedules/${scheduleId}`);
     return response.data;
   },
 
@@ -219,13 +215,36 @@ export const apiService = {
   },
 
   // Smart Schedule Generation
-  generateSmartSchedule: async (subjects: string[], preferences: any, startDate: string, endDate: string) => {
+  generateSmartSchedule: async (
+    subjects: string[], 
+    preferences: any, 
+    startDate: string, 
+    endDate: string, 
+    scheduleType: 'real' | 'demo' | 'template' = 'real',
+    signal?: AbortSignal
+  ) => {
     const response = await api.post<{ schedule: Schedule }>("/schedules/generate", {
       subjects,
       preferences,
       startDate,
-      endDate
+      endDate,
+      scheduleType
+    }, {
+      signal,
+      timeout: 35000 // 35 second timeout (slightly longer than backend timeout)
     });
+    return response.data;
+  },
+
+  // Clear demo schedules
+  clearDemoSchedules: async () => {
+    const response = await api.delete<{ message: string; deletedCount: number }>("/schedules/demo");
+    return response.data;
+  },
+
+  // Debug function - check sessions for schedule
+  debugScheduleSessions: async (scheduleId: string) => {
+    const response = await api.get(`/schedules/debug/${scheduleId}/sessions`);
     return response.data;
   },
 };

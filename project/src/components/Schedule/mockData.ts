@@ -65,6 +65,7 @@ export const generateMockSchedule = (subjects: Subject[]): Schedule => {
     name: `Test Schedule - ${new Date().toLocaleDateString()}`,
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
+    scheduleType: 'demo', // Add required scheduleType
     sessions,
     status: 'active',
     adaptations: [],

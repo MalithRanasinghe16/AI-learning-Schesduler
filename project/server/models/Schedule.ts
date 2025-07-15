@@ -15,6 +15,7 @@ export interface ISchedule extends Document {
   startDate: Date;
   endDate: Date;
   status: 'active' | 'completed' | 'archived';
+  scheduleType: 'real' | 'demo' | 'template'; // Type of schedule
   adaptations: IAdaptation[];
   preferences: {
     dailyStudyHours: number;
@@ -48,6 +49,11 @@ const ScheduleSchema = new Schema({
     enum: ['active', 'completed', 'archived'], 
     default: 'active' 
   },
+  scheduleType: {
+    type: String,
+    enum: ['real', 'demo', 'template'],
+    default: 'real'
+  },
   adaptations: [AdaptationSchema],
   preferences: {
     dailyStudyHours: { type: Number, default: 4 },
@@ -62,6 +68,7 @@ const ScheduleSchema = new Schema({
 // Indexes for better performance
 ScheduleSchema.index({ userId: 1 });
 ScheduleSchema.index({ userId: 1, status: 1 });
+ScheduleSchema.index({ userId: 1, scheduleType: 1 });
 ScheduleSchema.index({ startDate: 1, endDate: 1 });
 
 export default mongoose.model<ISchedule>('Schedule', ScheduleSchema);

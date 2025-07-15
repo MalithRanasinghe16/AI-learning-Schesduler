@@ -184,7 +184,7 @@ const Dashboard: React.FC = () => {
 
   const handleStartSession = async (sessionId: string) => {
     try {
-      await apiService.startSession(sessionId);
+      await apiService.updateSessionStatus(sessionId, 'in-progress');
       const updatedSessions = await apiService.getTodaySessions();
       setTodaySessions(updatedSessions.sessions || updatedSessions || []);
       toast.success('Session started successfully!');

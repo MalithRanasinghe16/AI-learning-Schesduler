@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { format, startOfWeek, endOfWeek, addDays, isSameDay, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Filter } from 'lucide-react';
 import { ScheduleSession, Subject, CalendarEvent, Schedule } from '../../types';
-import WeekView from './WeekView';
-import DayView from './DayView';
-import SessionBlock from './SessionBlock';
+import WeekView from './WeekView.tsx';
+import DayView from './DayView.tsx';
+import SessionBlock from './SessionBlock.tsx';
 import { apiService } from '../../services/api';
 import { toast } from 'react-toastify';
 
@@ -97,7 +97,6 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
 
   const handleNextWeek = () => {
     setCurrentDate(prev => addDays(prev, 7));
-  };
   };
 
   const handleToday = () => {

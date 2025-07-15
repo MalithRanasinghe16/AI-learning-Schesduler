@@ -37,7 +37,8 @@ export class SmartScheduleGenerator {
     preferences: SchedulePreferences,
     startDate: string,
     endDate: string,
-    scheduleName?: string
+    scheduleName?: string,
+    scheduleType: 'real' | 'demo' | 'template' = 'real'
   ): Promise<ISchedule> {
     try {
       // Fetch subjects with their details
@@ -53,18 +54,23 @@ export class SmartScheduleGenerator {
       // Create the schedule document
       const schedule = new Schedule({
         userId,
-        name: scheduleName || `AI Generated Schedule - ${format(new Date(), 'MMM dd, yyyy')}`,
+        name: scheduleName || `${scheduleType === 'demo' ? 'Demo' : 'AI Generated'} Schedule - ${format(new Date(), 'MMM dd, yyyy')}`,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
+        scheduleType,
         preferences,
         status: 'active'
       });
 
       await schedule.save();
 
+      console.log('🆔 Schedule saved with ID:', schedule._id);
+      console.log('🔧 Schedule ID type:', typeof schedule._id);
+      console.log('🔧 Schedule ID toString:', schedule._id.toString());
+
       // Generate sessions using rule-based algorithm
       const sessions = await this.generateSessions(
-        schedule._id,
+        schedule._id, // Pass ObjectId directly
         subjects,
         preferences,
         new Date(startDate),
@@ -82,7 +88,7 @@ export class SmartScheduleGenerator {
    * Generate sessions using rule-based algorithm with conflict detection
    */
   private async generateSessions(
-    scheduleId: string,
+    scheduleId: any, // Accept ObjectId or string
     subjects: any[],
     preferences: SchedulePreferences,
     startDate: Date,
@@ -90,31 +96,76 @@ export class SmartScheduleGenerator {
   ): Promise<IScheduleSession[]> {
     const sessions: IScheduleSession[] = [];
     const currentDate = new Date(startDate);
+    let iterationCount = 0;
+    const maxIterations = 100; // Prevent infinite loops
+
+    console.log('Starting session generation:', {
+      scheduleId,
+      subjectsCount: subjects.length,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      preferences
+    });
 
     // Calculate subject priorities and time allocation
     const subjectTimeAllocation = this.calculateSubjectTimeAllocation(subjects, preferences);
+    console.log('Subject time allocation:', subjectTimeAllocation);
 
-    while (currentDate <= endDate) {
+    while (currentDate <= endDate && iterationCount < maxIterations) {
+      iterationCount++;
+      console.log(`Processing day ${iterationCount}: ${currentDate.toISOString()}`);
+
       // Skip weekends if not in preferred time slots
       if (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
+        console.log('Skipping weekend day:', currentDate.toDateString());
         currentDate.setDate(currentDate.getDate() + 1);
         continue;
       }
 
-      // Generate daily sessions
-      const dailySessions = await this.generateDailySessions(
-        scheduleId,
-        currentDate,
-        subjectTimeAllocation,
-        preferences
-      );
+      try {
+        // Generate daily sessions
+        const dailySessions = await this.generateDailySessions(
+          scheduleId,
+          currentDate,
+          subjectTimeAllocation,
+          preferences
+        );
 
-      sessions.push(...dailySessions);
+        console.log(`Generated ${dailySessions.length} sessions for ${currentDate.toDateString()}`);
+        sessions.push(...dailySessions);
+      } catch (error) {
+        console.error(`Error generating sessions for ${currentDate.toDateString()}:`, error);
+        // Continue with next day instead of failing completely
+      }
+
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
+    if (iterationCount >= maxIterations) {
+      console.warn('Schedule generation stopped due to max iterations limit');
+    }
+
+    console.log(`Total sessions generated: ${sessions.length}`);
+
     // Save all sessions to database
-    await ScheduleSession.insertMany(sessions);
+    if (sessions.length > 0) {
+      console.log('💾 Saving sessions to database...');
+      console.log('🔗 Sample session scheduleId:', sessions[0]?.scheduleId);
+      console.log('🔗 Target scheduleId:', scheduleId);
+      
+      const savedSessions = await ScheduleSession.insertMany(sessions);
+      console.log(`✅ ${savedSessions.length} sessions saved to database`);
+      
+      // Verify sessions were saved
+      const verifyCount = await ScheduleSession.countDocuments({ scheduleId });
+      console.log(`🔍 Verification: ${verifyCount} sessions found for scheduleId: ${scheduleId}`);
+      
+      if (verifyCount !== sessions.length) {
+        console.error('⚠️ WARNING: Mismatch between generated and saved sessions!');
+      }
+    } else {
+      console.warn('⚠️ No sessions to save');
+    }
 
     return sessions;
   }
@@ -163,61 +214,106 @@ export class SmartScheduleGenerator {
     const sessions: IScheduleSession[] = [];
     const availableTimeSlots = this.getAvailableTimeSlots(date, preferences.preferredTimeSlots);
     
+    console.log(`Generating sessions for ${date.toDateString()}, available slots:`, availableTimeSlots.length);
+    console.log('Available time slots:', availableTimeSlots.map(slot => `${slot.type}: ${slot.start.toLocaleTimeString()} - ${slot.end.toLocaleTimeString()}`));
+    
+    if (availableTimeSlots.length === 0) {
+      console.log('No available time slots for this day');
+      return sessions;
+    }
+    
     let currentSlotIndex = 0;
     let currentTimeInSlot = new Date(availableTimeSlots[0]?.start || date);
+
+    console.log('Subject allocations to process:', subjectTimeAllocation.map(a => `${a.subject.name}: ${a.dailyMinutes} minutes`));
 
     for (const allocation of subjectTimeAllocation) {
       const remainingMinutes = allocation.dailyMinutes;
       let minutesScheduled = 0;
+      let attempts = 0;
+      const maxAttempts = 50; // Prevent infinite loops
 
-      while (minutesScheduled < remainingMinutes && currentSlotIndex < availableTimeSlots.length) {
+      console.log(`\nProcessing subject: ${allocation.subject.name}, need ${remainingMinutes} minutes`);
+
+      while (minutesScheduled < remainingMinutes && currentSlotIndex < availableTimeSlots.length && attempts < maxAttempts) {
+        attempts++;
         const currentSlot = availableTimeSlots[currentSlotIndex];
+        const remainingTimeInSlot = this.getRemainingTimeInSlot(currentTimeInSlot, currentSlot.end);
         const sessionDuration = Math.min(
           preferences.sessionDuration,
           remainingMinutes - minutesScheduled,
-          this.getRemainingTimeInSlot(currentTimeInSlot, currentSlot.end)
+          remainingTimeInSlot
         );
 
+        console.log(`  Attempt ${attempts}: Slot ${currentSlotIndex}, Current time: ${currentTimeInSlot.toLocaleTimeString()}, Session duration: ${sessionDuration}, Remaining in slot: ${remainingTimeInSlot}`);
+
         if (sessionDuration >= 30) { // Minimum session length
-          // Check for conflicts
-          const conflictCheck = await this.checkForConflicts(
-            currentTimeInSlot,
-            new Date(currentTimeInSlot.getTime() + sessionDuration * 60000)
-          );
+          try {
+            // Check for conflicts within the same schedule
+            const conflictCheck = await this.checkForConflicts(
+              currentTimeInSlot,
+              new Date(currentTimeInSlot.getTime() + sessionDuration * 60000),
+              scheduleId
+            );
 
-          if (!conflictCheck.hasConflict) {
-            const session = new ScheduleSession({
-              scheduleId,
-              subjectId: allocation.subject._id,
-              startTime: new Date(currentTimeInSlot),
-              endTime: new Date(currentTimeInSlot.getTime() + sessionDuration * 60000),
-              duration: sessionDuration,
-              priority: allocation.priority,
-              sessionType: this.determineSessionType(allocation.subject, minutesScheduled, allocation.dailyMinutes),
-              status: 'scheduled'
-            });
+            if (!conflictCheck.hasConflict) {
+              const session = new ScheduleSession({
+                scheduleId,
+                subjectId: allocation.subject._id,
+                startTime: new Date(currentTimeInSlot),
+                endTime: new Date(currentTimeInSlot.getTime() + sessionDuration * 60000),
+                duration: sessionDuration,
+                priority: allocation.priority,
+                sessionType: this.determineSessionType(allocation.subject, minutesScheduled, allocation.dailyMinutes),
+                status: 'scheduled'
+              });
 
-            sessions.push(session);
-            minutesScheduled += sessionDuration;
+              sessions.push(session);
+              minutesScheduled += sessionDuration;
+              
+              console.log(`    ✓ Created session: ${currentTimeInSlot.toLocaleTimeString()} - ${new Date(currentTimeInSlot.getTime() + sessionDuration * 60000).toLocaleTimeString()}`);
 
-            // Move to next time slot with break
-            currentTimeInSlot = new Date(currentTimeInSlot.getTime() + (sessionDuration + preferences.breakDuration) * 60000);
-          } else {
-            // Move to next available time
-            currentTimeInSlot = new Date(currentTimeInSlot.getTime() + 15 * 60000); // 15-minute increment
+              // Move to next time slot with break
+              currentTimeInSlot = new Date(currentTimeInSlot.getTime() + (sessionDuration + preferences.breakDuration) * 60000);
+            } else {
+              console.log(`    ✗ Conflict detected, moving 15 minutes forward`);
+              // Move to next available time
+              currentTimeInSlot = new Date(currentTimeInSlot.getTime() + 15 * 60000); // 15-minute increment
+            }
+          } catch (error) {
+            console.error('    ✗ Error checking conflicts:', error);
+            // Move to next time slot
+            currentTimeInSlot = new Date(currentTimeInSlot.getTime() + 15 * 60000);
+          }
+        } else {
+          console.log(`    ✗ Session too short (${sessionDuration} min), moving to next slot`);
+          // Session too short, move to next time slot
+          currentSlotIndex++;
+          if (currentSlotIndex < availableTimeSlots.length) {
+            currentTimeInSlot = new Date(availableTimeSlots[currentSlotIndex].start);
+            console.log(`    → Moved to slot ${currentSlotIndex}: ${currentTimeInSlot.toLocaleTimeString()}`);
           }
         }
 
         // Check if we need to move to next time slot
         if (currentTimeInSlot >= currentSlot.end) {
+          console.log(`    → Time exceeded slot end, moving to next slot`);
           currentSlotIndex++;
           if (currentSlotIndex < availableTimeSlots.length) {
             currentTimeInSlot = new Date(availableTimeSlots[currentSlotIndex].start);
+            console.log(`    → Moved to slot ${currentSlotIndex}: ${currentTimeInSlot.toLocaleTimeString()}`);
           }
         }
       }
+      
+      console.log(`  Subject ${allocation.subject.name} completed: ${minutesScheduled}/${remainingMinutes} minutes scheduled`);
+      
+      if (attempts >= maxAttempts) {
+        console.warn(`Max attempts reached for subject ${allocation.subject.name}, scheduled ${minutesScheduled}/${remainingMinutes} minutes`);
+      }
     }
 
+    console.log(`Daily sessions generated: ${sessions.length}`);
     return sessions;
   }
 
@@ -247,8 +343,9 @@ export class SmartScheduleGenerator {
   /**
    * Check for scheduling conflicts
    */
-  private async checkForConflicts(startTime: Date, endTime: Date): Promise<ConflictCheckResult> {
-    const conflictingSessions = await ScheduleSession.find({
+  private async checkForConflicts(startTime: Date, endTime: Date, scheduleId?: string): Promise<ConflictCheckResult> {
+    // Build query to check for conflicts only within the same schedule/user context
+    const query: any = {
       $or: [
         {
           startTime: { $lt: endTime },
@@ -256,7 +353,26 @@ export class SmartScheduleGenerator {
         }
       ],
       status: { $ne: 'cancelled' }
-    });
+    };
+
+    // If scheduleId is provided, only check within that schedule
+    if (scheduleId) {
+      query.scheduleId = scheduleId;
+    }
+
+    console.log('🔍 Conflict check query:', JSON.stringify(query, null, 2));
+
+    const conflictingSessions = await ScheduleSession.find(query);
+
+    console.log(`🔍 Found ${conflictingSessions.length} conflicting sessions`);
+    if (conflictingSessions.length > 0) {
+      console.log('🔍 Conflicting sessions:', conflictingSessions.map(s => ({
+        id: s._id,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        scheduleId: s.scheduleId
+      })));
+    }
 
     return {
       hasConflict: conflictingSessions.length > 0,
@@ -301,8 +417,8 @@ export class SmartScheduleGenerator {
 
     const newEndTime = new Date(newStartTime.getTime() + session.duration * 60000);
 
-    // Check for conflicts
-    const conflictCheck = await this.checkForConflicts(newStartTime, newEndTime);
+    // Check for conflicts within the same schedule
+    const conflictCheck = await this.checkForConflicts(newStartTime, newEndTime, session.scheduleId);
     if (conflictCheck.hasConflict) {
       throw new Error('New time slot conflicts with existing sessions');
     }

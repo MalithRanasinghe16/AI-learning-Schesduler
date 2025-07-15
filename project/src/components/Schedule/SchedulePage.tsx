@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Plus, Settings, RefreshCw } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, Settings, RefreshCw, BarChart3 } from 'lucide-react';
 import { Schedule, ScheduleSession, Subject } from '../../types';
 import { apiService } from '../../services/api';
 import SimpleScheduleView from './SimpleScheduleView';
+import SessionReminder from './SessionReminder';
+import StudyAnalytics from './StudyAnalytics';
 import { toast } from 'react-toastify';
 import { generateMockSchedule, generateMockSubjects } from './mockData';
 
@@ -12,8 +14,10 @@ const SchedulePage: React.FC = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationController, setGenerationController] = useState<AbortController | null>(null);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [backendStatus, setBackendStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -49,15 +53,51 @@ const SchedulePage: React.FC = () => {
       const schedules = schedulesResponse.schedules || schedulesResponse || [];
       const subjects = subjectsResponse.subjects || subjectsResponse || [];
       
-      setSchedules(schedules);
+      // Load session counts for all schedules
+      const schedulesWithCounts = await Promise.all(
+        schedules.map(async (schedule) => {
+          try {
+            const sessionsResponse = await apiService.getScheduleSessions(schedule._id);
+            const sessions = sessionsResponse.sessions || sessionsResponse || [];
+            return {
+              ...schedule,
+              sessions: sessions
+            };
+          } catch (error) {
+            console.warn(`Failed to load sessions for schedule ${schedule.name}:`, error);
+            return {
+              ...schedule,
+              sessions: []
+            };
+          }
+        })
+      );
+      
+      setSchedules(schedulesWithCounts);
       setSubjects(subjects);
       
-      console.log('Loaded schedules:', schedules);
+      console.log('Loaded all schedules with session counts:', schedulesWithCounts.map(s => ({
+        name: s.name,
+        sessionCount: s.sessions?.length || 0,
+        type: s.scheduleType || 'unknown'
+      })));
       console.log('Loaded subjects:', subjects);
       
       // Set the active schedule as current, or the most recent one
-      const activeSchedule = schedules.find(s => s.status === 'active') || schedules[0];
-      setCurrentSchedule(activeSchedule || null);
+      const activeSchedule = schedulesWithCounts.find(s => s.status === 'active') || schedulesWithCounts[0];
+      
+      if (activeSchedule) {
+        console.log('✅ Setting current schedule:', {
+          id: activeSchedule._id,
+          name: activeSchedule.name,
+          scheduleType: activeSchedule.scheduleType,
+          sessionsCount: activeSchedule.sessions?.length || 0
+        });
+        
+        setCurrentSchedule(activeSchedule);
+      } else {
+        setCurrentSchedule(null);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('Failed to load schedule data');
@@ -79,24 +119,64 @@ const SchedulePage: React.FC = () => {
     setShowGenerateModal(true);
   };
 
-  const handleGenerateTestSchedule = () => {
-    console.log('=== GENERATING TEST SCHEDULE (MOCK DATA) ===');
+  const handleGenerateTestSchedule = async () => {
+    console.log('=== GENERATING TEST SCHEDULE (DATABASE) ===');
     
-    // Use mock subjects if no real subjects are available
-    const testSubjects = subjects.length > 0 ? subjects : generateMockSubjects();
-    const testSchedule = generateMockSchedule(testSubjects);
-    
-    console.log('Generated mock schedule:', testSchedule);
-    console.log('Mock schedule sessions:', testSchedule.sessions.map(s => ({ id: s._id, isMock: s.isMockData })));
-    
-    setCurrentSchedule(testSchedule);
-    setSchedules(prev => [testSchedule, ...prev]);
-    
-    if (subjects.length === 0) {
-      setSubjects(testSubjects);
+    try {
+      // Use existing subjects if available, otherwise create test subjects first
+      let testSubjects = subjects;
+      if (subjects.length === 0) {
+        console.log('No subjects found, creating test subjects first...');
+        await handleCreateTestSubjects();
+        // Reload subjects after creation
+        const subjectsResponse = await apiService.getSubjects();
+        testSubjects = subjectsResponse.subjects || subjectsResponse || [];
+      }
+
+      if (testSubjects.length === 0) {
+        toast.error('No subjects available for schedule generation');
+        return;
+      }
+
+      const subjectIds = testSubjects.map(subject => subject._id);
+      const preferences = {
+        dailyStudyHours: 4,
+        preferredTimeSlots: ['morning', 'afternoon'],
+        sessionDuration: 90,
+        breakDuration: 15
+      };
+
+      const startDate = new Date().toISOString().split('T')[0];
+      const endDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      console.log('Generating demo schedule with:', {
+        subjectIds,
+        preferences,
+        startDate,
+        endDate
+      });
+
+      // Generate demo schedule via API
+      const response = await apiService.generateSmartSchedule(
+        subjectIds,
+        preferences,
+        startDate,
+        endDate,
+        'demo' // This is a demo schedule
+      );
+
+      console.log('Generated demo schedule via API:', response.schedule);
+      
+      // Update state
+      const newSchedule = response.schedule;
+      setCurrentSchedule(newSchedule);
+      setSchedules(prev => [newSchedule, ...prev]);
+      
+      toast.success('Demo schedule generated successfully! (Database)');
+    } catch (error) {
+      console.error('Error generating demo schedule:', error);
+      toast.error('Failed to generate demo schedule');
     }
-    
-    toast.success('Test schedule generated successfully! (Mock Data)');
   };
 
   const handleCreateTestSubjects = async () => {
@@ -122,95 +202,140 @@ const SchedulePage: React.FC = () => {
   const handleScheduleGenerated = async (newSchedule: Schedule) => {
     console.log('=== SCHEDULE GENERATED FROM API ===');
     console.log('Generated API schedule:', newSchedule);
-    console.log('API schedule sessions:', newSchedule.sessions.map(s => ({ id: s._id, isMock: s.isMockData })));
+    console.log('API schedule sessions:', newSchedule.sessions?.map(s => ({ id: s._id, isMock: s.isMockData })) || []);
     
-    setSchedules(prev => [newSchedule, ...prev]);
-    setCurrentSchedule(newSchedule);
+    // Ensure the new schedule has a sessions array
+    const validatedSchedule = {
+      ...newSchedule,
+      sessions: newSchedule.sessions || []
+    };
+    
+    setSchedules(prev => [validatedSchedule, ...prev]);
+    setCurrentSchedule(validatedSchedule);
     setShowGenerateModal(false);
     toast.success('New schedule generated successfully! (API Data)');
   };
 
   const handleSessionUpdate = async (sessionId: string, updates: Partial<ScheduleSession>) => {
     try {
-      // Find the session to check if it's mock data
-      const session = currentSchedule?.sessions.find(s => s._id === sessionId);
-      
-      // Check if this is a mock session using multiple criteria
-      const isMockSession = session?.isMockData || 
-                           sessionId.startsWith('session-') || 
-                           sessionId.includes('mock-') ||
-                           currentSchedule?.isMockData ||
-                           currentSchedule?.name?.includes('Test Schedule');
-      
       console.log('=== SESSION UPDATE ===');
       console.log('Session ID:', sessionId);
-      console.log('Is Mock Session:', isMockSession);
-      console.log('Session data:', session);
-      console.log('Current schedule isMock:', currentSchedule?.isMockData);
-      console.log('Current schedule name:', currentSchedule?.name);
+      console.log('Current schedule type:', currentSchedule?.scheduleType);
       console.log('Updates:', updates);
       
-      if (!isMockSession) {
-        console.log('Making API call to update session...');
-        
-        // First check if backend is running
+      // Always call API for session updates now (both real and demo schedules are in database)
+      try {
         const isBackendRunning = await checkBackendHealth();
         if (!isBackendRunning) {
-          console.warn('Backend is not running, treating session as mock');
-          toast.warn('Backend is not running - treating as mock session');
-        } else {
-          try {
-            // Only call API for real sessions
-            await apiService.updateScheduleSession(sessionId, updates);
-            console.log('API call completed successfully');
-          } catch (apiError: any) {
-            console.warn('API call failed, treating as mock session:', apiError.message);
-            // If API call fails (e.g., session not found in DB), treat as mock session
-            if (apiError.response?.status === 404) {
-              console.log('Session not found in database, treating as mock session');
-              toast.warn('Session not found in database - updating locally only');
-            } else {
-              // Re-throw other errors
-              throw apiError;
-            }
-          }
+          console.warn('Backend is not running');
+          toast.warn('Backend is not running - cannot update session');
+          return;
         }
-      } else {
-        console.log('Skipping API call for mock session');
+
+        // Check if this is a status-only update (for Start/Complete buttons)
+        const isStatusOnlyUpdate = Object.keys(updates).length === 1 && 'status' in updates;
+        
+        if (isStatusOnlyUpdate && updates.status) {
+          // Use PATCH endpoint for status updates
+          await apiService.updateSessionStatus(sessionId, updates.status);
+          console.log('Status update completed successfully');
+        } else {
+          // Use PUT endpoint for full session updates
+          await apiService.updateScheduleSession(sessionId, updates);
+          console.log('Full session update completed successfully');
+        }
+      } catch (apiError: any) {
+        console.error('API call failed:', apiError.message);
+        if (apiError.response?.status === 404) {
+          console.log('Session not found in database');
+          toast.error('Session not found in database');
+        } else if (apiError.response?.status === 403) {
+          console.log('Access denied - user may not own this session');
+          toast.error('Access denied - cannot update this session');
+        } else {
+          toast.error('Failed to update session');
+        }
+        return;
       }
       
-      // Update the current schedule's sessions (both mock and real)
-      if (currentSchedule) {
+      // Update the current schedule's sessions
+      if (currentSchedule && currentSchedule.sessions) {
         const updatedSessions = currentSchedule.sessions.map(session =>
           session._id === sessionId ? { ...session, ...updates } : session
         );
-        setCurrentSchedule({
+        const updatedSchedule = {
           ...currentSchedule,
           sessions: updatedSessions
-        });
+        };
+        setCurrentSchedule(updatedSchedule);
       }
       
       // Update the schedules list as well
-      setSchedules(prev => prev.map(schedule => 
+      const updatedSchedules = schedules.map(schedule => 
         schedule._id === currentSchedule?._id 
-          ? { ...schedule, sessions: schedule.sessions.map(session =>
+          ? { ...schedule, sessions: schedule.sessions?.map(session =>
               session._id === sessionId ? { ...session, ...updates } : session
-            )}
+            ) || [] }
           : schedule
-      ));
+      );
+      setSchedules(updatedSchedules);
       
-      // Determine success message based on what actually happened
-      let successMessage = 'Session updated successfully';
-      if (isMockSession) {
-        successMessage = 'Mock session updated locally';
-      } else if (!await checkBackendHealth()) {
-        successMessage = 'Session updated locally (Backend offline)';
-      }
+      // Determine success message based on schedule type
+      const successMessage = currentSchedule?.scheduleType === 'demo' 
+        ? 'Demo session updated successfully'
+        : 'Session updated successfully';
       
       toast.success(successMessage);
     } catch (error) {
       console.error('Error updating session:', error);
       toast.error('Failed to update session');
+    }
+  };
+
+  const handleClearMockSchedules = async () => {
+    console.log('=== CLEARING DEMO SCHEDULES ===');
+    console.log('Current schedules before clearing:', schedules.length);
+    console.log('Demo schedules before clearing:', schedules.filter(s => s.scheduleType === 'demo').length);
+    
+    try {
+      // Clear demo schedules via API
+      const response = await apiService.clearDemoSchedules();
+      console.log('API response:', response);
+      
+      // Remove demo schedules from the current state
+      const realSchedules = schedules.filter(schedule => schedule.scheduleType !== 'demo');
+      setSchedules(realSchedules);
+      
+      console.log('Real schedules remaining:', realSchedules.length);
+      
+      // If current schedule is a demo schedule, clear it
+      if (currentSchedule && currentSchedule.scheduleType === 'demo') {
+        setCurrentSchedule(realSchedules[0] || null);
+        console.log('Cleared current demo schedule, new current schedule:', realSchedules[0]?._id || 'none');
+      }
+      
+      toast.success(`Cleared ${response.deletedCount} demo schedules successfully!`);
+    } catch (error) {
+      console.error('Error clearing demo schedules:', error);
+      toast.error('Failed to clear demo schedules');
+    }
+  };
+
+  const handleDebugScheduleSessions = async () => {
+    if (!currentSchedule) {
+      toast.error('No schedule selected');
+      return;
+    }
+    
+    try {
+      console.log('🐛 DEBUGGING SCHEDULE SESSIONS');
+      const debugResult = await apiService.debugScheduleSessions(currentSchedule._id);
+      console.log('🐛 Debug result:', debugResult);
+      
+      toast.info(`Debug: ${debugResult.sessionsById} sessions by ID, ${debugResult.sessionsByObjectId} by ObjectId`);
+    } catch (error) {
+      console.error('Error debugging schedule sessions:', error);
+      toast.error('Debug failed');
     }
   };
 
@@ -238,6 +363,12 @@ const SchedulePage: React.FC = () => {
     );
   }
 
+  // Ensure currentSchedule has sessions array if it exists
+  const safeCurrentSchedule = currentSchedule ? {
+    ...currentSchedule,
+    sessions: currentSchedule.sessions || []
+  } : null;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-indigo-900 p-6">
       <div className="max-w-7xl mx-auto">
@@ -248,8 +379,8 @@ const SchedulePage: React.FC = () => {
             <div>
               <h1 className="text-3xl font-bold text-white">Study Schedule</h1>
               <p className="text-gray-300 mt-1">
-                {currentSchedule 
-                  ? `${currentSchedule.name} - ${currentSchedule.sessions.length} sessions`
+                {safeCurrentSchedule 
+                  ? `${safeCurrentSchedule.name} - ${safeCurrentSchedule.sessions?.length || 0} sessions`
                   : 'No active schedule'
                 }
               </p>
@@ -264,19 +395,19 @@ const SchedulePage: React.FC = () => {
                   <span className="text-xs text-gray-400">
                     Backend: {backendStatus === 'checking' ? 'Checking...' : backendStatus}
                   </span>
-                </div>
-                
-                {/* Schedule Type */}
-                {currentSchedule && (
-                  <div className="flex items-center space-x-1">
-                    <div className={`w-2 h-2 rounded-full ${
-                      currentSchedule.isMockData ? 'bg-purple-400' : 'bg-blue-400'
-                    }`}></div>
-                    <span className="text-xs text-gray-400">
-                      {currentSchedule.isMockData ? 'Mock Data' : 'API Data'}
-                    </span>
-                  </div>
-                )}
+                </div>                  {/* Schedule Type */}
+                  {safeCurrentSchedule && (
+                    <div className="flex items-center space-x-1">
+                      <div className={`w-2 h-2 rounded-full ${
+                        safeCurrentSchedule.scheduleType === 'demo' ? 'bg-purple-400' : 
+                        safeCurrentSchedule.scheduleType === 'template' ? 'bg-orange-400' : 'bg-blue-400'
+                      }`}></div>
+                      <span className="text-xs text-gray-400">
+                        {safeCurrentSchedule.scheduleType === 'demo' ? 'Demo Schedule' : 
+                         safeCurrentSchedule.scheduleType === 'template' ? 'Template Schedule' : 'Real Schedule'}
+                      </span>
+                    </div>
+                  )}
               </div>
             </div>
           </div>
@@ -289,6 +420,21 @@ const SchedulePage: React.FC = () => {
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
             </button>
+
+            {/* Analytics Toggle */}
+            {safeCurrentSchedule && (
+              <button
+                onClick={() => setShowAnalytics(!showAnalytics)}
+                className={`inline-flex items-center px-4 py-2 text-white rounded-lg transition-colors ${
+                  showAnalytics 
+                    ? 'bg-purple-600 hover:bg-purple-700' 
+                    : 'bg-gray-800 hover:bg-gray-700'
+                }`}
+              >
+                <BarChart3 className="h-4 w-4 mr-2" />
+                {showAnalytics ? 'Hide Analytics' : 'Show Analytics'}
+              </button>
+            )}
 
             {/* Create Test Subjects Button */}
             {subjects.length === 0 && (
@@ -307,8 +453,28 @@ const SchedulePage: React.FC = () => {
               className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
               <Plus className="h-4 w-4 mr-2" />
-              Test Schedule (Mock Data)
+              Generate Demo Schedule
             </button>
+
+            {/* Clear Demo Schedules Button */}
+            {schedules.some(s => s.scheduleType === 'demo') && (
+              <button
+                onClick={handleClearMockSchedules}
+                className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Clear Demo Data
+              </button>
+            )}
+
+            {/* Debug Button */}
+            {currentSchedule && (
+              <button
+                onClick={handleDebugScheduleSessions}
+                className="inline-flex items-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+              >
+                🐛 Debug Sessions
+              </button>
+            )}
             
             <button
               onClick={(e) => {
@@ -332,16 +498,40 @@ const SchedulePage: React.FC = () => {
               Select Schedule
             </label>
             <select
-              value={currentSchedule?._id || ''}
-              onChange={(e) => {
-                const schedule = schedules.find(s => s._id === e.target.value);
-                setCurrentSchedule(schedule || null);
+              value={safeCurrentSchedule?._id || ''}
+              onChange={async (e) => {
+                const scheduleId = e.target.value;
+                if (!scheduleId) return;
+                
+                try {
+                  console.log('🔄 Loading full schedule for selection:', scheduleId);
+                  const fullScheduleResponse = await apiService.getScheduleWithSessions(scheduleId);
+                  const fullSchedule = fullScheduleResponse.schedule;
+                  
+                  console.log('✅ Loaded selected schedule with sessions:', {
+                    id: fullSchedule._id,
+                    name: fullSchedule.name,
+                    sessionsCount: fullSchedule.sessions?.length || 0
+                  });
+                  
+                  setCurrentSchedule(fullSchedule);
+                } catch (error) {
+                  console.error('❌ Error loading selected schedule:', error);
+                  // Fallback to basic schedule
+                  const schedule = schedules.find(s => s._id === scheduleId);
+                  const validatedSchedule = schedule ? {
+                    ...schedule,
+                    sessions: schedule.sessions || []
+                  } : null;
+                  setCurrentSchedule(validatedSchedule);
+                  toast.error('Failed to load schedule details');
+                }
               }}
               className="bg-gray-800 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
             >
               {schedules.map(schedule => (
                 <option key={schedule._id} value={schedule._id}>
-                  {schedule.name} ({schedule.sessions.length} sessions)
+                  {schedule.name} ({schedule.sessions?.length || 0} sessions)
                   {schedule.status === 'active' && ' - Active'}
                 </option>
               ))}
@@ -350,12 +540,51 @@ const SchedulePage: React.FC = () => {
         )}
 
         {/* Main Calendar View */}
-        {currentSchedule ? (
-          <SimpleScheduleView
-            schedule={currentSchedule}
-            subjects={subjects}
-            onSessionUpdate={(session: ScheduleSession) => handleSessionUpdate(session._id, session)}
-          />
+        {safeCurrentSchedule ? (
+          <div>
+            {/* Session Reminders */}
+            <SessionReminder 
+              sessions={safeCurrentSchedule.sessions || []} 
+              subjects={subjects}
+            />
+            
+            {/* Analytics (optional) */}
+            {showAnalytics && (
+              <StudyAnalytics 
+                sessions={safeCurrentSchedule.sessions || []} 
+                subjects={subjects}
+              />
+            )}
+            
+            {/* Schedule View */}
+            <SimpleScheduleView
+              schedule={safeCurrentSchedule}
+              subjects={subjects}
+              onSessionUpdate={(updatedSession: ScheduleSession) => {
+                // Extract only the changed fields by comparing with original session
+                const originalSession = safeCurrentSchedule.sessions?.find(s => s._id === updatedSession._id);
+                if (!originalSession) {
+                  console.error('Original session not found for comparison');
+                  return;
+                }
+                
+                // Create updates object with only changed fields
+                const updates: Partial<ScheduleSession> = {};
+                if (originalSession.status !== updatedSession.status) {
+                  updates.status = updatedSession.status;
+                }
+                if (originalSession.startTime !== updatedSession.startTime) {
+                  updates.startTime = updatedSession.startTime;
+                }
+                if (originalSession.endTime !== updatedSession.endTime) {
+                  updates.endTime = updatedSession.endTime;
+                }
+                // Add other fields as needed
+                
+                handleSessionUpdate(updatedSession._id, updates);
+              }}
+            />
+          </div>
         ) : (
           <div className="bg-gray-800 rounded-lg p-8 text-center">
             <CalendarIcon className="h-16 w-16 text-gray-500 mx-auto mb-4" />
@@ -369,7 +598,7 @@ const SchedulePage: React.FC = () => {
                 className="inline-flex items-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
               >
                 <Plus className="h-5 w-5 mr-2" />
-                Generate Test Schedule
+                Generate Demo Schedule
               </button>
               <button
                 onClick={(e) => {
@@ -425,6 +654,7 @@ const GenerateScheduleModal: React.FC<GenerateScheduleModalProps> = ({
   onGenerate
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationController, setGenerationController] = useState<AbortController | null>(null);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [preferences, setPreferences] = useState({
     startDate: new Date().toISOString().split('T')[0],
@@ -443,6 +673,9 @@ const GenerateScheduleModal: React.FC<GenerateScheduleModalProps> = ({
       toast.error('Please select at least one subject');
       return;
     }
+
+    const controller = new AbortController();
+    setGenerationController(controller);
 
     try {
       setIsGenerating(true);
@@ -466,17 +699,33 @@ const GenerateScheduleModal: React.FC<GenerateScheduleModalProps> = ({
         selectedSubjects,
         scheduleData.preferences,
         preferences.startDate,
-        preferences.endDate
+        preferences.endDate,
+        'real', // Real schedule from modal
+        controller.signal
       );
       
       console.log('Schedule generation response:', response);
       onGenerate(response.schedule);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating schedule:', error);
-      toast.error('Failed to generate schedule');
+      if (error.name === 'AbortError') {
+        toast.info('Schedule generation was cancelled');
+      } else if (error.message?.includes('timeout')) {
+        toast.error('Schedule generation timed out. Please try with fewer subjects or shorter time period.');
+      } else {
+        toast.error('Failed to generate schedule: ' + (error.message || 'Unknown error'));
+      }
     } finally {
       setIsGenerating(false);
+      setGenerationController(null);
     }
+  };
+
+  const handleCancel = () => {
+    if (generationController) {
+      generationController.abort();
+    }
+    onClose();
   };
 
   return (
@@ -614,17 +863,17 @@ const GenerateScheduleModal: React.FC<GenerateScheduleModalProps> = ({
         {/* Actions */}
         <div className="flex justify-end space-x-3">
           <button
-            onClick={onClose}
+            onClick={handleCancel}
             className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
           >
-            Cancel
+            {isGenerating ? 'Cancel' : 'Close'}
           </button>
           <button
             onClick={handleGenerate}
             disabled={isGenerating || selectedSubjects.length === 0 || subjects.length === 0}
             className="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isGenerating ? 'Generating...' : 'Generate Schedule'}
+            {isGenerating ? 'Generating... (Cancel to stop)' : 'Generate Schedule'}
           </button>
         </div>
       </div>
