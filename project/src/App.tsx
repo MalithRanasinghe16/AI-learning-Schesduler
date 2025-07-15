@@ -28,7 +28,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gradient-to-b from-gray-900 to-indigo-900 test-css">
+      <div className="flex items-center justify-center h-screen bg-gradient-to-b from-gray-900 to-indigo-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
       </div>
     );
@@ -42,7 +42,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return (
     <>
       <Navbar />
-      <main className="flex-grow bg-gradient-to-b from-gray-900 to-indigo-900 test-css">
+      <main className="flex-grow bg-gradient-to-b from-gray-900 to-indigo-900">
         {children}
       </main>
     </>
@@ -53,7 +53,7 @@ const App: React.FC = () => (
   <AuthProvider>
     <ScheduleProvider>
       <BrowserRouter>
-        <div className="flex flex-col min-h-screen bg-gradient-to-b from-gray-900 to-indigo-900 test-css">
+        <div className="flex flex-col min-h-screen bg-gradient-to-b from-gray-900 to-indigo-900">
           <Routes>
             <Route path="/login" element={<LoginWithNavigate />} />
             <Route path="/register" element={<RegisterWithNavigate />} />

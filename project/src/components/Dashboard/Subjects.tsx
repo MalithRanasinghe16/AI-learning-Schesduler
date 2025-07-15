@@ -192,14 +192,14 @@ const Subjects: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64 bg-gradient-to-b from-gray-900 to-indigo-900 test-css">
+      <div className="flex items-center justify-center h-64 bg-gradient-to-b from-gray-900 to-indigo-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 p-6 bg-gradient-to-b from-gray-900 to-indigo-900 min-h-screen test-css">
+    <div className="space-y-6 p-6 bg-gradient-to-b from-gray-900 to-indigo-900 min-h-screen">
       <ToastContainer position="top-right" autoClose={3000} theme="dark" />
       <div className="bg-gradient-to-r from-indigo-800 to-purple-800 rounded-lg shadow-lg p-6 transform hover:scale-105 transition-transform duration-300 animate-fade-in">
         <h1 className="text-3xl font-bold text-white mb-2 flex items-center">

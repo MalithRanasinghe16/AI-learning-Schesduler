@@ -412,9 +412,9 @@ const SchedulePage: React.FC = () => {
                 }
               </p>
               {/* Status indicators */}
-              <div className="flex items-center space-x-3 mt-2">
+              {/* <div className="flex items-center space-x-3 mt-2">
                 {/* Backend Status */}
-                <div className="flex items-center space-x-1">
+                {/* <div className="flex items-center space-x-1">
                   <div className={`w-2 h-2 rounded-full ${
                     backendStatus === 'online' ? 'bg-green-400' : 
                     backendStatus === 'offline' ? 'bg-red-400' : 'bg-yellow-400'
@@ -422,8 +422,9 @@ const SchedulePage: React.FC = () => {
                   <span className="text-xs text-gray-400">
                     Backend: {backendStatus === 'checking' ? 'Checking...' : backendStatus}
                   </span>
-                </div>                  {/* Schedule Type */}
-                  {safeCurrentSchedule && (
+                </div> */}
+                {/* Schedule Type */}
+                {/* {safeCurrentSchedule && (
                     <div className="flex items-center space-x-1">
                       <div className={`w-2 h-2 rounded-full ${
                         safeCurrentSchedule.scheduleType === 'demo' ? 'bg-purple-400' : 
@@ -434,8 +435,8 @@ const SchedulePage: React.FC = () => {
                          safeCurrentSchedule.scheduleType === 'template' ? 'Template Schedule' : 'Real Schedule'}
                       </span>
                     </div>
-                  )}
-              </div>
+                  )} */}
+              {/* </div> */}
             </div>
           </div>
           
