@@ -464,7 +464,7 @@ const SchedulePage: React.FC = () => {
             )}
 
             {/* Create Test Subjects Button */}
-            {subjects.length === 0 && (
+            {/* {subjects.length === 0 && (
               <button
                 onClick={handleCreateTestSubjects}
                 className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
@@ -472,36 +472,36 @@ const SchedulePage: React.FC = () => {
                 <Plus className="h-4 w-4 mr-2" />
                 Create Test Subjects
               </button>
-            )}
+            )} */}
 
             {/* Test Schedule Button for Development */}
-            <button
+            {/* <button
               onClick={handleGenerateTestSchedule}
               className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
               <Plus className="h-4 w-4 mr-2" />
               Generate Demo Schedule
-            </button>
+            </button> */}
 
             {/* Clear Demo Schedules Button */}
-            {schedules.some(s => s.scheduleType === 'demo') && (
+            {/* {schedules.some(s => s.scheduleType === 'demo') && (
               <button
                 onClick={handleClearMockSchedules}
                 className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
                 Clear Demo Data
               </button>
-            )}
+            )} */}
 
             {/* Debug Button */}
-            {currentSchedule && (
+            {/* {currentSchedule && (
               <button
                 onClick={handleDebugScheduleSessions}
                 className="inline-flex items-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
               >
                 🐛 Debug Sessions
               </button>
-            )}
+            )} */}
             
             <button
               onClick={(e) => {
@@ -620,13 +620,13 @@ const SchedulePage: React.FC = () => {
               You don't have any schedules yet. Create your first schedule to get started.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <button
+              {/* <button
                 onClick={handleGenerateTestSchedule}
                 className="inline-flex items-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
               >
                 <Plus className="h-5 w-5 mr-2" />
                 Generate Demo Schedule
-              </button>
+              </button> */}
               <button
                 onClick={(e) => {
                   console.log('Generate Your First Schedule button clicked');
