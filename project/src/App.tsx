@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ScheduleProvider } from './contexts/ScheduleContext';
 import Navbar from './components/Layout/Navbar';
 import Dashboard from './components/Dashboard/Dashboard';
 import SchedulePage from './components/Schedule/SchedulePage';
@@ -50,29 +51,31 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 const App: React.FC = () => (
   <AuthProvider>
-    <BrowserRouter>
-      <div className="flex flex-col min-h-screen bg-gradient-to-b from-gray-900 to-indigo-900 test-css">
-        <Routes>
-          <Route path="/login" element={<LoginWithNavigate />} />
-          <Route path="/register" element={<RegisterWithNavigate />} />
-          <Route
-            path="*"
-            element={
-              <ProtectedRoute>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/schedule" element={<SchedulePage />} />
-                  <Route path="/subjects" element={<Subjects />} />
-                  <Route path="/analytics" element={<Analytics />} />
-                  <Route path="/profile" element={<UserProfile />} />
-                </Routes>
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </div>
-    </BrowserRouter>
+    <ScheduleProvider>
+      <BrowserRouter>
+        <div className="flex flex-col min-h-screen bg-gradient-to-b from-gray-900 to-indigo-900 test-css">
+          <Routes>
+            <Route path="/login" element={<LoginWithNavigate />} />
+            <Route path="/register" element={<RegisterWithNavigate />} />
+            <Route
+              path="*"
+              element={
+                <ProtectedRoute>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/schedule" element={<SchedulePage />} />
+                    <Route path="/subjects" element={<Subjects />} />
+                    <Route path="/analytics" element={<Analytics />} />
+                    <Route path="/profile" element={<UserProfile />} />
+                  </Routes>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </div>
+      </BrowserRouter>
+    </ScheduleProvider>
   </AuthProvider>
 );
 

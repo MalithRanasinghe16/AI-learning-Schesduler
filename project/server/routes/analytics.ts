@@ -1,5 +1,6 @@
 import express, { Response } from 'express';
-import StudySession from '../models/StudySession';
+import ScheduleSession from '../models/ScheduleSession';
+import Schedule from '../models/Schedule';
 import Subject from '../models/Subject';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays } from 'date-fns';
@@ -16,55 +17,48 @@ router.get('/dashboard', authenticateToken, async (req: AuthRequest, res: Respon
     const monthStart = startOfMonth(now);
     const monthEnd = endOfMonth(now);
 
+    console.log('Analytics: Getting dashboard analytics for user:', userId);
+
+    // Get all user's schedules
+    const userSchedules = await Schedule.find({ userId });
+    const scheduleIds = userSchedules.map(s => s._id);
+    
+    console.log('Analytics: Found user schedules:', scheduleIds.length);
+
+    if (scheduleIds.length === 0) {
+      console.log('Analytics: No schedules found, returning empty analytics');
+      const emptyAnalytics = {
+        weeklyStats: {
+          totalSessions: 0,
+          totalStudyTime: 0,
+          averageFocus: 0,
+          completionRate: 0,
+          dailyStudyTime: [0, 0, 0, 0, 0, 0, 0]
+        },
+        subjectProgress: {
+          total: 0,
+          completed: 0,
+          inProgress: 0,
+          notStarted: 0,
+          details: []
+        }
+      };
+      res.json(emptyAnalytics);
+      return;
+    }
+
     // Get completed sessions this week
-    const weekSessions = await StudySession.find({
-      userId,
+    const weekSessions = await ScheduleSession.find({
+      scheduleId: { $in: scheduleIds },
       status: 'completed',
       actualEndTime: { $gte: weekStart, $lte: weekEnd }
     });
 
-    // Get completed sessions this month
-    const monthSessions = await StudySession.find({
-      userId,
-      status: 'completed',
-      actualEndTime: { $gte: monthStart, $lte: monthEnd }
-    });
+    console.log('Analytics: Found week sessions:', weekSessions.length);
 
     // Get all subjects
     const subjects = await Subject.find({ userId });
     const completedSubjects = subjects.filter(s => s.isCompleted);
-
-    // Calculate weekly stats
-    const weeklyStats = {
-      totalSessions: weekSessions.length,
-      totalStudyTime: weekSessions.reduce((sum, s) => sum + (s.actualDuration || 0), 0),
-      averageFocus: weekSessions.length > 0 
-        ? weekSessions.reduce((sum, s) => sum + (s.focusScore || 0), 0) / weekSessions.length 
-        : 0,
-      completionRate: weekSessions.length > 0 
-        ? (weekSessions.filter(s => s.status === 'completed').length / weekSessions.length) * 100 
-        : 0
-    };
-
-    // Calculate monthly stats
-    const monthlyStats = {
-      totalSessions: monthSessions.length,
-      totalStudyTime: monthSessions.reduce((sum, s) => sum + (s.actualDuration || 0), 0),
-      averageFocus: monthSessions.length > 0 
-        ? monthSessions.reduce((sum, s) => sum + (s.focusScore || 0), 0) / monthSessions.length 
-        : 0,
-      completionRate: monthSessions.length > 0 
-        ? (monthSessions.filter(s => s.status === 'completed').length / monthSessions.length) * 100 
-        : 0
-    };
-
-    // Subject progress
-    const subjectProgress = {
-      total: subjects.length,
-      completed: completedSubjects.length,
-      inProgress: subjects.filter(s => !s.isCompleted && s.progress > 0).length,
-      notStarted: subjects.filter(s => s.progress === 0).length
-    };
 
     // Get daily study time for the last 7 days
     const dailyStudyTime = [];
@@ -73,77 +67,117 @@ router.get('/dashboard', authenticateToken, async (req: AuthRequest, res: Respon
       const dayStart = new Date(date.setHours(0, 0, 0, 0));
       const dayEnd = new Date(date.setHours(23, 59, 59, 999));
       
-      const daySessions = await StudySession.find({
-        userId,
+      const daySessions = await ScheduleSession.find({
+        scheduleId: { $in: scheduleIds },
         status: 'completed',
         actualEndTime: { $gte: dayStart, $lte: dayEnd }
       });
       
-      dailyStudyTime.push({
-        date: dayStart.toISOString().split('T')[0],
-        minutes: daySessions.reduce((sum, s) => sum + (s.actualDuration || 0), 0)
-      });
+      const dayMinutes = daySessions.reduce((sum, s) => sum + (s.duration || 0), 0);
+      dailyStudyTime.push(dayMinutes);
     }
+
+    // Calculate weekly stats
+    const weeklyStats = {
+      totalSessions: weekSessions.length,
+      totalStudyTime: weekSessions.reduce((sum, s) => sum + (s.duration || 0), 0),
+      averageFocus: weekSessions.length > 0 
+        ? weekSessions.reduce((sum, s) => sum + (s.focusScore || 0), 0) / weekSessions.length 
+        : 0,
+      completionRate: weekSessions.length > 0 
+        ? (weekSessions.filter(s => s.status === 'completed').length / weekSessions.length) * 100 
+        : 0,
+      dailyStudyTime: dailyStudyTime
+    };
+
+    // Subject progress
+    const subjectProgress = {
+      total: subjects.length,
+      completed: completedSubjects.length,
+      inProgress: subjects.filter(s => !s.isCompleted && s.progress > 0).length,
+      notStarted: subjects.filter(s => s.progress === 0).length,
+      details: subjects.map(s => ({
+        id: s._id,
+        name: s.name,
+        progress: s.progress,
+        isCompleted: s.isCompleted
+      }))
+    };
 
     res.json({
       weeklyStats,
-      monthlyStats,
-      subjectProgress,
-      dailyStudyTime,
-      userMetrics: req.user!.performanceMetrics
+      subjectProgress
     });
   } catch (error) {
     console.error('Get analytics error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
 
-// Get subject performance analytics
-router.get('/subjects', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+// Get analytics for a specific schedule
+router.get('/schedule/:scheduleId', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!._id;
-    
-    const subjects = await Subject.find({ userId });
-    const subjectAnalytics = [];
+    const { scheduleId } = req.params;
 
-    for (const subject of subjects) {
-      const sessions = await StudySession.find({
-        userId,
-        subjectId: subject._id,
-        status: 'completed'
-      });
+    console.log('Analytics: Getting schedule analytics for:', scheduleId);
 
-      const analytics = {
-        subject: {
-          id: subject._id,
-          name: subject.name,
-          category: subject.category,
-          difficulty: subject.difficulty,
-          progress: subject.progress,
-          isCompleted: subject.isCompleted
-        },
-        sessions: {
-          total: sessions.length,
-          totalTime: sessions.reduce((sum, s) => sum + (s.actualDuration || 0), 0),
-          averageDuration: sessions.length > 0 
-            ? sessions.reduce((sum, s) => sum + (s.actualDuration || 0), 0) / sessions.length 
-            : 0,
-          averageFocus: sessions.length > 0 
-            ? sessions.reduce((sum, s) => sum + (s.focusScore || 0), 0) / sessions.length 
-            : 0,
-          averageDifficulty: sessions.length > 0 
-            ? sessions.reduce((sum, s) => sum + (s.difficultyRating || 0), 0) / sessions.length 
-            : 0
-        }
-      };
-
-      subjectAnalytics.push(analytics);
+    // Verify schedule belongs to user
+    const schedule = await Schedule.findOne({ _id: scheduleId, userId });
+    if (!schedule) {
+      res.status(404).json({ message: 'Schedule not found' });
+      return;
     }
 
-    res.json({ subjectAnalytics });
+    // Get all sessions for this schedule
+    const allSessions = await ScheduleSession.find({ scheduleId });
+    const completedSessions = allSessions.filter(s => s.status === 'completed');
+    const totalSessions = allSessions.length;
+
+    console.log('Analytics: Schedule sessions:', {
+      total: totalSessions,
+      completed: completedSessions.length
+    });
+
+    // Calculate completion rate
+    const completionRate = totalSessions > 0 ? (completedSessions.length / totalSessions) * 100 : 0;
+
+    // Calculate total study time (from completed sessions)
+    const totalStudyTime = completedSessions.reduce((sum, s) => sum + (s.duration || 0), 0);
+
+    // Calculate daily average (total time divided by days in schedule)
+    const scheduleStartDate = new Date(schedule.startDate);
+    const scheduleEndDate = new Date(schedule.endDate);
+    const totalDays = Math.ceil((scheduleEndDate.getTime() - scheduleStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const dailyAverage = totalDays > 0 ? Math.round(totalStudyTime / totalDays) : 0;
+
+    // Calculate average focus score
+    const averageFocus = completedSessions.length > 0 
+      ? completedSessions.reduce((sum, s) => sum + (s.focusScore || 0), 0) / completedSessions.length 
+      : 0;
+
+    const scheduleAnalytics = {
+      scheduleId,
+      scheduleName: schedule.name,
+      completionRate: Math.round(completionRate),
+      sessionsCompleted: completedSessions.length,
+      totalSessions: totalSessions,
+      totalStudyTime: totalStudyTime, // in minutes
+      dailyAverage: dailyAverage, // in minutes
+      averageFocus: averageFocus,
+      scheduleProgress: {
+        startDate: schedule.startDate,
+        endDate: schedule.endDate,
+        status: schedule.status
+      }
+    };
+
+    console.log('Analytics: Calculated schedule analytics:', scheduleAnalytics);
+
+    res.json(scheduleAnalytics);
   } catch (error) {
-    console.error('Get subject analytics error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Get schedule analytics error:', error);
+    res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
 

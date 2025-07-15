@@ -110,9 +110,31 @@ export const apiService = {
     return response.data;
   },
 
+  getScheduleAnalytics: async (scheduleId: string) => {
+    const response = await api.get<{
+      scheduleId: string;
+      scheduleName: string;
+      completionRate: number;
+      sessionsCompleted: number;
+      totalSessions: number;
+      totalStudyTime: number;
+      dailyAverage: number;
+      averageFocus: number;
+      scheduleProgress: any;
+    }>(`/analytics/schedule/${scheduleId}`);
+    return response.data;
+  },
+
   getTodaySessions: async () => {
     const response = await api.get<{ sessions: ScheduleSession[] }>(
       "/schedule-sessions/today"
+    );
+    return response.data;
+  },
+
+  getTodaySessionsForSchedule: async (scheduleId: string) => {
+    const response = await api.get<{ sessions: ScheduleSession[] }>(
+      `/schedule-sessions/today/${scheduleId}`
     );
     return response.data;
   },

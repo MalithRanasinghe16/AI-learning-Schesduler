@@ -174,6 +174,59 @@ router.get('/today', auth, async (req, res) => {
   }
 });
 
+// Get today's sessions for a specific schedule
+router.get('/today/:scheduleId', auth, async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
+    const today = new Date();
+    const startOfToday = startOfDay(today);
+    const endOfToday = endOfDay(today);
+
+    console.log('🔍 Getting today\'s sessions for schedule:', {
+      scheduleId,
+      userId: req.user.id,
+      today: today.toISOString(),
+      startOfToday: startOfToday.toISOString(),
+      endOfToday: endOfToday.toISOString()
+    });
+
+    // First verify the schedule belongs to the user
+    const schedule = await Schedule.findOne({ _id: scheduleId, userId: req.user.id });
+    if (!schedule) {
+      console.log('❌ Schedule not found or access denied:', { scheduleId, userId: req.user.id });
+      return res.status(404).json({ message: 'Schedule not found or access denied' });
+    }
+
+    const sessions = await ScheduleSession.find({
+      scheduleId: scheduleId,
+      startTime: {
+        $gte: startOfToday,
+        $lte: endOfToday
+      }
+    })
+      .populate('subjectId', 'name difficulty priority category')
+      .populate('scheduleId', 'name userId')
+      .sort({ startTime: 1 });
+
+    console.log('✅ Found today\'s sessions for schedule:', {
+      scheduleId,
+      scheduleName: schedule.name,
+      sessionCount: sessions.length,
+      sessions: sessions.map(s => ({
+        id: s._id,
+        subject: (s.subjectId as any)?.name,
+        startTime: s.startTime,
+        status: s.status
+      }))
+    });
+
+    res.json({ sessions });
+  } catch (error) {
+    console.error('❌ Error fetching today\'s sessions for schedule:', error);
+    res.status(500).json({ message: 'Error fetching today\'s sessions for schedule' });
+  }
+});
+
 // Get specific session
 router.get('/:id', auth, async (req, res) => {
   try {

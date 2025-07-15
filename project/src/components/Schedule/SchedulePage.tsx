@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar as CalendarIcon, Plus, Settings, RefreshCw, BarChart3 } from 'lucide-react';
 import { Schedule, ScheduleSession, Subject } from '../../types';
 import { apiService } from '../../services/api';
+import { useScheduleContext } from '../../contexts/ScheduleContext';
 import SimpleScheduleView from './SimpleScheduleView';
 import SessionReminder from './SessionReminder';
 import StudyAnalytics from './StudyAnalytics';
@@ -9,6 +10,7 @@ import { toast } from 'react-toastify';
 import { generateMockSchedule, generateMockSubjects } from './mockData';
 
 const SchedulePage: React.FC = () => {
+  const { selectedSchedule, setSelectedSchedule, selectedScheduleId, setSelectedScheduleId } = useScheduleContext();
   const [currentSchedule, setCurrentSchedule] = useState<Schedule | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -37,6 +39,31 @@ const SchedulePage: React.FC = () => {
     const interval = setInterval(checkStatus, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Sync currentSchedule with global context
+  useEffect(() => {
+    if (currentSchedule && currentSchedule._id !== selectedScheduleId) {
+      setSelectedSchedule(currentSchedule);
+      console.log('🔄 Updated global selected schedule:', {
+        id: currentSchedule._id,
+        name: currentSchedule.name
+      });
+    }
+  }, [currentSchedule, selectedScheduleId, setSelectedSchedule]);
+
+  // Load schedule from context on mount if available
+  useEffect(() => {
+    if (selectedScheduleId && schedules.length > 0 && !currentSchedule) {
+      const contextSchedule = schedules.find(s => s._id === selectedScheduleId);
+      if (contextSchedule) {
+        setCurrentSchedule(contextSchedule);
+        console.log('🔄 Restored schedule from context:', {
+          id: contextSchedule._id,
+          name: contextSchedule.name
+        });
+      }
+    }
+  }, [selectedScheduleId, schedules, currentSchedule]);
 
   const loadData = async () => {
     try {
