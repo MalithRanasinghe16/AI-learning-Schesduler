@@ -7,7 +7,6 @@ import SimpleScheduleView from './SimpleScheduleView';
 import SessionReminder from './SessionReminder';
 import StudyAnalytics from './StudyAnalytics';
 import { toast } from 'react-toastify';
-import { generateMockSchedule, generateMockSubjects } from './mockData';
 
 const SchedulePage: React.FC = () => {
   const { selectedSchedule, setSelectedSchedule, selectedScheduleId, setSelectedScheduleId } = useScheduleContext();
@@ -146,85 +145,85 @@ const SchedulePage: React.FC = () => {
     setShowGenerateModal(true);
   };
 
-  const handleGenerateTestSchedule = async () => {
-    console.log('=== GENERATING TEST SCHEDULE (DATABASE) ===');
+  // const handleGenerateTestSchedule = async () => {
+  //   console.log('=== GENERATING TEST SCHEDULE (DATABASE) ===');
     
-    try {
-      // Use existing subjects if available, otherwise create test subjects first
-      let testSubjects = subjects;
-      if (subjects.length === 0) {
-        console.log('No subjects found, creating test subjects first...');
-        await handleCreateTestSubjects();
-        // Reload subjects after creation
-        const subjectsResponse = await apiService.getSubjects();
-        testSubjects = subjectsResponse.subjects || subjectsResponse || [];
-      }
+  //   try {
+  //     // Use existing subjects if available, otherwise create test subjects first
+  //     let testSubjects = subjects;
+  //     if (subjects.length === 0) {
+  //       console.log('No subjects found, creating test subjects first...');
+  //       await handleCreateTestSubjects();
+  //       // Reload subjects after creation
+  //       const subjectsResponse = await apiService.getSubjects();
+  //       testSubjects = subjectsResponse.subjects || subjectsResponse || [];
+  //     }
 
-      if (testSubjects.length === 0) {
-        toast.error('No subjects available for schedule generation');
-        return;
-      }
+  //     if (testSubjects.length === 0) {
+  //       toast.error('No subjects available for schedule generation');
+  //       return;
+  //     }
 
-      const subjectIds = testSubjects.map(subject => subject._id);
-      const preferences = {
-        dailyStudyHours: 4,
-        preferredTimeSlots: ['morning', 'afternoon'],
-        sessionDuration: 90,
-        breakDuration: 15
-      };
+  //     const subjectIds = testSubjects.map(subject => subject._id);
+  //     const preferences = {
+  //       dailyStudyHours: 4,
+  //       preferredTimeSlots: ['morning', 'afternoon'],
+  //       sessionDuration: 90,
+  //       breakDuration: 15
+  //     };
 
-      const startDate = new Date().toISOString().split('T')[0];
-      const endDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  //     const startDate = new Date().toISOString().split('T')[0];
+  //     const endDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-      console.log('Generating demo schedule with:', {
-        subjectIds,
-        preferences,
-        startDate,
-        endDate
-      });
+  //     console.log('Generating demo schedule with:', {
+  //       subjectIds,
+  //       preferences,
+  //       startDate,
+  //       endDate
+  //     });
 
-      // Generate demo schedule via API
-      const response = await apiService.generateSmartSchedule(
-        subjectIds,
-        preferences,
-        startDate,
-        endDate,
-        'demo' // This is a demo schedule
-      );
+  //     // Generate demo schedule via API
+  //     const response = await apiService.generateSmartSchedule(
+  //       subjectIds,
+  //       preferences,
+  //       startDate,
+  //       endDate,
+  //       'demo' // This is a demo schedule
+  //     );
 
-      console.log('Generated demo schedule via API:', response.schedule);
+  //     console.log('Generated demo schedule via API:', response.schedule);
       
-      // Update state
-      const newSchedule = response.schedule;
-      setCurrentSchedule(newSchedule);
-      setSchedules(prev => [newSchedule, ...prev]);
+  //     // Update state
+  //     const newSchedule = response.schedule;
+  //     setCurrentSchedule(newSchedule);
+  //     setSchedules(prev => [newSchedule, ...prev]);
       
-      toast.success('Demo schedule generated successfully! (Database)');
-    } catch (error) {
-      console.error('Error generating demo schedule:', error);
-      toast.error('Failed to generate demo schedule');
-    }
-  };
+  //     toast.success('Demo schedule generated successfully! (Database)');
+  //   } catch (error) {
+  //     console.error('Error generating demo schedule:', error);
+  //     toast.error('Failed to generate demo schedule');
+  //   }
+  // };
 
-  const handleCreateTestSubjects = async () => {
-    try {
-      const mockSubjects = generateMockSubjects();
+  // const handleCreateTestSubjects = async () => {
+  //   try {
+  //     const mockSubjects = generateMockSubjects();
       
-      // Create subjects via API
-      const createdSubjects: Subject[] = [];
-      for (const subject of mockSubjects) {
-        const { _id, ...subjectData } = subject; // Remove mock _id
-        const response = await apiService.createSubject(subjectData);
-        createdSubjects.push(response.subject || response);
-      }
+  //     // Create subjects via API
+  //     const createdSubjects: Subject[] = [];
+  //     for (const subject of mockSubjects) {
+  //       const { _id, ...subjectData } = subject; // Remove mock _id
+  //       const response = await apiService.createSubject(subjectData);
+  //       createdSubjects.push(response.subject || response);
+  //     }
       
-      setSubjects(createdSubjects);
-      toast.success(`Created ${createdSubjects.length} test subjects!`);
-    } catch (error) {
-      console.error('Error creating test subjects:', error);
-      toast.error('Failed to create test subjects');
-    }
-  };
+  //     setSubjects(createdSubjects);
+  //     toast.success(`Created ${createdSubjects.length} test subjects!`);
+  //   } catch (error) {
+  //     console.error('Error creating test subjects:', error);
+  //     toast.error('Failed to create test subjects');
+  //   }
+  // };
 
   const handleScheduleGenerated = async (newSchedule: Schedule) => {
     console.log('=== SCHEDULE GENERATED FROM API ===');
@@ -319,52 +318,52 @@ const SchedulePage: React.FC = () => {
     }
   };
 
-  const handleClearMockSchedules = async () => {
-    console.log('=== CLEARING DEMO SCHEDULES ===');
-    console.log('Current schedules before clearing:', schedules.length);
-    console.log('Demo schedules before clearing:', schedules.filter(s => s.scheduleType === 'demo').length);
+  // const handleClearMockSchedules = async () => {
+  //   console.log('=== CLEARING DEMO SCHEDULES ===');
+  //   console.log('Current schedules before clearing:', schedules.length);
+  //   console.log('Demo schedules before clearing:', schedules.filter(s => s.scheduleType === 'demo').length);
     
-    try {
-      // Clear demo schedules via API
-      const response = await apiService.clearDemoSchedules();
-      console.log('API response:', response);
+  //   try {
+  //     // Clear demo schedules via API
+  //     const response = await apiService.clearDemoSchedules();
+  //     console.log('API response:', response);
       
-      // Remove demo schedules from the current state
-      const realSchedules = schedules.filter(schedule => schedule.scheduleType !== 'demo');
-      setSchedules(realSchedules);
+  //     // Remove demo schedules from the current state
+  //     const realSchedules = schedules.filter(schedule => schedule.scheduleType !== 'demo');
+  //     setSchedules(realSchedules);
       
-      console.log('Real schedules remaining:', realSchedules.length);
+  //     console.log('Real schedules remaining:', realSchedules.length);
       
-      // If current schedule is a demo schedule, clear it
-      if (currentSchedule && currentSchedule.scheduleType === 'demo') {
-        setCurrentSchedule(realSchedules[0] || null);
-        console.log('Cleared current demo schedule, new current schedule:', realSchedules[0]?._id || 'none');
-      }
+  //     // If current schedule is a demo schedule, clear it
+  //     if (currentSchedule && currentSchedule.scheduleType === 'demo') {
+  //       setCurrentSchedule(realSchedules[0] || null);
+  //       console.log('Cleared current demo schedule, new current schedule:', realSchedules[0]?._id || 'none');
+  //     }
       
-      toast.success(`Cleared ${response.deletedCount} demo schedules successfully!`);
-    } catch (error) {
-      console.error('Error clearing demo schedules:', error);
-      toast.error('Failed to clear demo schedules');
-    }
-  };
+  //     toast.success(`Cleared ${response.deletedCount} demo schedules successfully!`);
+  //   } catch (error) {
+  //     console.error('Error clearing demo schedules:', error);
+  //     toast.error('Failed to clear demo schedules');
+  //   }
+  // };
 
-  const handleDebugScheduleSessions = async () => {
-    if (!currentSchedule) {
-      toast.error('No schedule selected');
-      return;
-    }
+  // const handleDebugScheduleSessions = async () => {
+  //   if (!currentSchedule) {
+  //     toast.error('No schedule selected');
+  //     return;
+  //   }
     
-    try {
-      console.log('🐛 DEBUGGING SCHEDULE SESSIONS');
-      const debugResult = await apiService.debugScheduleSessions(currentSchedule._id);
-      console.log('🐛 Debug result:', debugResult);
+  //   try {
+  //     console.log('🐛 DEBUGGING SCHEDULE SESSIONS');
+  //     const debugResult = await apiService.debugScheduleSessions(currentSchedule._id);
+  //     console.log('🐛 Debug result:', debugResult);
       
-      toast.info(`Debug: ${debugResult.sessionsById} sessions by ID, ${debugResult.sessionsByObjectId} by ObjectId`);
-    } catch (error) {
-      console.error('Error debugging schedule sessions:', error);
-      toast.error('Debug failed');
-    }
-  };
+  //     toast.info(`Debug: ${debugResult.sessionsById} sessions by ID, ${debugResult.sessionsByObjectId} by ObjectId`);
+  //   } catch (error) {
+  //     console.error('Error debugging schedule sessions:', error);
+  //     toast.error('Debug failed');
+  //   }
+  // };
 
   // Check if backend is running
   const checkBackendHealth = async () => {

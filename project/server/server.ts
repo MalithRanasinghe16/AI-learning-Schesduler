@@ -18,7 +18,6 @@ import authRoutes from './routes/auth';
 import subjectRoutes from './routes/subjects';
 import sessionRoutes from './routes/sessions';
 import analyticsRoutes from './routes/analytics';
-import adaptiveScheduleRoutes from './routes/adaptive-schedule';
 import scheduleRoutes from './routes/schedules';
 import scheduleSessionRoutes from './routes/schedule-sessions'; 
 
@@ -59,7 +58,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/adaptive-schedule', adaptiveScheduleRoutes);
 app.use('/api/schedules', scheduleRoutes);
 app.use('/api/schedule-sessions', scheduleSessionRoutes); 
 
