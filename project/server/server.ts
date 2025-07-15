@@ -18,7 +18,9 @@ import authRoutes from './routes/auth';
 import subjectRoutes from './routes/subjects';
 import sessionRoutes from './routes/sessions';
 import analyticsRoutes from './routes/analytics';
-import adaptiveScheduleRoutes from './routes/adaptive-schedule'; 
+import adaptiveScheduleRoutes from './routes/adaptive-schedule';
+import scheduleRoutes from './routes/schedules';
+import scheduleSessionRoutes from './routes/schedule-sessions'; 
 
 // Load environment variables from the root directory
 const __filename = fileURLToPath(import.meta.url);
@@ -41,8 +43,10 @@ app.use(cors({
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // 1000 requests for dev, 100 for production
   message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
 app.use('/api/', limiter);
 
@@ -55,7 +59,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/adaptive-schedule', adaptiveScheduleRoutes); 
+app.use('/api/adaptive-schedule', adaptiveScheduleRoutes);
+app.use('/api/schedules', scheduleRoutes);
+app.use('/api/schedule-sessions', scheduleSessionRoutes); 
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
