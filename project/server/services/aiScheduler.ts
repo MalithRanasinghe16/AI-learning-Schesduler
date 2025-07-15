@@ -2,6 +2,7 @@ import User, { IUser } from '../models/User';
 import Subject, { ISubject } from '../models/Subject';
 import StudySession, { IStudySession } from '../models/StudySession';
 import { addDays, startOfDay, addMinutes, format } from 'date-fns';
+import mongoose from 'mongoose';
 
 export interface ScheduleRecommendation {
   subjectId: string;
@@ -12,26 +13,48 @@ export interface ScheduleRecommendation {
 }
 
 export const getAdaptiveSchedule = async (userId: string): Promise<ScheduleRecommendation[]> => {
-  const user = await User.findById(userId);
-  if (!user) {
-    throw new Error('User not found');
-  }
-
-  const subjects = await Subject.find({ userId, isCompleted: false });
-  if (subjects.length === 0) {
-    return [];
-  }
-
-  return AIScheduler.generateOptimalSchedule(user, subjects);
+  // For now, return empty array unless explicitly generated
+  // This prevents auto-generation of schedules when page loads
+  // Users must click "Generate Schedule" to get recommendations
+  return [];
 };
 
-export const generateSchedule = async (userId: string, subjects: ISubject[], startDate: Date): Promise<ScheduleRecommendation[]> => {
-  const user = await User.findById(userId);
-  if (!user) {
-    throw new Error('User not found');
-  }
+export const generateSchedule = async (userId: string, subjectIds: string[], startDate: Date): Promise<ScheduleRecommendation[]> => {
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
 
-  return AIScheduler.generateOptimalSchedule(user, subjects, 7, startDate);
+    // Validate subject IDs
+    if (!subjectIds || !Array.isArray(subjectIds) || subjectIds.length === 0) {
+      throw new Error('Valid subject IDs array is required');
+    }
+
+    // Validate ObjectId format
+    const validSubjectIds = subjectIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validSubjectIds.length === 0) {
+      throw new Error('No valid ObjectId format found in subject IDs');
+    }
+
+    // Fetch subjects from database
+    const subjects = await Subject.find({ 
+      _id: { $in: validSubjectIds }, 
+      userId,
+      isCompleted: false 
+    });
+
+    if (subjects.length === 0) {
+      throw new Error('No valid subjects found for the given IDs');
+    }
+
+    console.log(`Generating schedule for ${subjects.length} subjects for user ${userId}`);
+
+    return AIScheduler.generateOptimalSchedule(user, subjects, 7, startDate);
+  } catch (error) {
+    console.error('Error in generateSchedule:', error);
+    throw error;
+  }
 };
 
 export class AIScheduler {
@@ -41,35 +64,55 @@ export class AIScheduler {
     days: number = 7,
     startDate: Date = new Date()
   ): Promise<ScheduleRecommendation[]> {
-    const recommendations: ScheduleRecommendation[] = [];
-    const scheduleStartDate = startOfDay(startDate);
+    try {
+      // Input validation
+      if (!user || !subjects || subjects.length === 0) {
+        return [];
+      }
 
-    // Get user's recent performance data
-    const recentSessions = await StudySession.find({
-      userId: user._id,
-      actualEndTime: { $exists: true },
-      createdAt: { $gte: addDays(new Date(), -30) },
-    }).sort({ createdAt: -1 }).limit(50);
+      if (days <= 0 || days > 30) {
+        days = 7; // Default to 7 days
+      }
 
-    // Calculate performance metrics per subject
-    const subjectPerformance = this.calculateSubjectPerformance(recentSessions);
+      const recommendations: ScheduleRecommendation[] = [];
+      const scheduleStartDate = startOfDay(startDate);
 
-    // Sort subjects by priority and performance
-    const prioritizedSubjects = this.prioritizeSubjects(subjects, subjectPerformance, user);
+      // Get user's recent performance data with error handling
+      let recentSessions: IStudySession[] = [];
+      try {
+        recentSessions = await StudySession.find({
+          userId: user._id,
+          actualEndTime: { $exists: true },
+          createdAt: { $gte: addDays(new Date(), -30) },
+        }).sort({ createdAt: -1 }).limit(50);
+      } catch (error) {
+        console.error('Error fetching recent sessions:', error);
+        // Continue with empty sessions array
+      }
 
-    // Generate schedule for each day
-    for (let day = 0; day < days; day++) {
-      const currentDate = addDays(scheduleStartDate, day);
-      const dailyRecommendations = this.generateDailySchedule(
-        currentDate,
-        prioritizedSubjects,
-        user,
-        subjectPerformance
-      );
-      recommendations.push(...dailyRecommendations);
+      // Calculate performance metrics per subject
+      const subjectPerformance = this.calculateSubjectPerformance(recentSessions);
+
+      // Sort subjects by priority and performance
+      const prioritizedSubjects = this.prioritizeSubjects(subjects, subjectPerformance, user);
+
+      // Generate schedule for each day
+      for (let day = 0; day < days; day++) {
+        const currentDate = addDays(scheduleStartDate, day);
+        const dailyRecommendations = this.generateDailySchedule(
+          currentDate,
+          prioritizedSubjects,
+          user,
+          subjectPerformance
+        );
+        recommendations.push(...dailyRecommendations);
+      }
+
+      return recommendations;
+    } catch (error) {
+      console.error('Error in generateOptimalSchedule:', error);
+      throw new Error(`Failed to generate schedule: ${error.message}`);
     }
-
-    return recommendations;
   }
 
   private static calculateSubjectPerformance(sessions: IStudySession[]): Map<string, any> {

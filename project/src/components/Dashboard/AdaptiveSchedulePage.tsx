@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
 import { Clock, Target, TrendingUp, BookOpen, Calendar as CalendarIcon } from 'lucide-react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { ScheduleRecommendation, StudySession } from '../../../server/services/aiScheduler';
+import { ScheduleRecommendation, StudySession, Subject } from '../../types';
 import { apiService } from '../../services/api';
 import { format } from 'date-fns';
 
@@ -24,9 +23,6 @@ interface Analytics {
 }
 
 interface ScheduleInput {
-  subjectName: string;
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
-  priority: 'low' | 'medium' | 'high';
   preferredDate: string;
   preferredTime: string;
 }
@@ -34,12 +30,11 @@ interface ScheduleInput {
 const AdaptiveSchedulePage: React.FC = () => {
   const [schedules, setSchedules] = useState<ScheduleRecommendation[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
   const [input, setInput] = useState<ScheduleInput>({
-    subjectName: '',
-    difficulty: 'beginner',
-    priority: 'medium',
     preferredDate: new Date().toISOString().split('T')[0],
     preferredTime: '14:00',
   });
@@ -52,9 +47,15 @@ const AdaptiveSchedulePage: React.FC = () => {
         setIsLoading(true);
         setError(null);
 
+        // Fetch existing schedules
         const { recommendations } = await apiService.getAdaptiveSchedule();
         setSchedules(Array.isArray(recommendations) ? recommendations : []);
 
+        // Fetch existing subjects
+        const { subjects: existingSubjects } = await apiService.getSubjects();
+        setSubjects(existingSubjects || []);
+
+        // Fetch analytics data
         const { sessions } = await apiService.getSessions();
         const recentSessions: Session[] = sessions || [];
         const totalStudyTime = recentSessions.reduce(
@@ -86,6 +87,16 @@ const AdaptiveSchedulePage: React.FC = () => {
     fetchData();
   }, []);
 
+  const handleSubjectSelection = (subjectId: string) => {
+    setSelectedSubjectIds(prev => {
+      if (prev.includes(subjectId)) {
+        return prev.filter(id => id !== subjectId);
+      } else {
+        return [...prev, subjectId];
+      }
+    });
+  };
+
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
@@ -93,38 +104,48 @@ const AdaptiveSchedulePage: React.FC = () => {
     setInput((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleDateChange = (date: Date) => {
-    setInput((prev) => ({ ...prev, preferredDate: format(date, 'yyyy-MM-dd') }));
-    setShowCalendar(false);
+  const handleDateChange = (value: any) => {
+    if (value && value instanceof Date) {
+      setInput((prev) => ({ ...prev, preferredDate: format(value, 'yyyy-MM-dd') }));
+      setShowCalendar(false);
+    }
   };
 
   const generateSchedule = async () => {
-    if (!input.subjectName.trim()) {
-      setError('Subject name is required.');
-      toast.error('Subject name is required.');
-      return;
-    }
-
     try {
       setIsLoading(true);
       setError(null);
 
-      const { subject } = await apiService.createSubject({
-        name: input.subjectName,
-        difficulty: input.difficulty,
-        priority: input.priority,
-        estimatedHours: 10,
-        progress: 0,
-        isCompleted: false,
-      });
+      // Validate that subjects are selected
+      if (selectedSubjectIds.length === 0) {
+        setError('Please select at least one subject.');
+        toast.error('Please select at least one subject.');
+        return;
+      }
 
-      const { recommendations } = await apiService.generateAdaptiveSchedule(
-        [subject._id],
-        `${input.preferredDate}T${input.preferredTime}:00.000Z`
+      const schedulePayload = {
+        subjects: selectedSubjectIds,
+        startDate: `${input.preferredDate}T${input.preferredTime}:00.000Z`
+      };
+
+      console.log('Generating schedule with payload:', schedulePayload);
+
+      const scheduleResponse = await apiService.generateAdaptiveSchedule(
+        schedulePayload.subjects,
+        schedulePayload.startDate
       );
-      setSchedules(Array.isArray(recommendations) ? recommendations : []);
+      
+      console.log('Schedule response received:', scheduleResponse);
+      console.log('Generated recommendations:', scheduleResponse.recommendations);
+      
+      setSchedules(Array.isArray(scheduleResponse.recommendations) ? scheduleResponse.recommendations : []);
       toast.success('Schedule generated successfully!');
     } catch (err: any) {
+      console.error('=== GENERATE SCHEDULE ERROR ===');
+      console.error('Error message:', err.message);
+      console.error('Error response status:', err.response?.status);
+      console.error('Error response data:', err.response?.data);
+      console.error('Full error object:', err);
       setError(`Failed to generate schedule: ${err.message}`);
       toast.error(`Failed to generate schedule: ${err.message}`);
     } finally {
@@ -160,85 +181,106 @@ const AdaptiveSchedulePage: React.FC = () => {
 
       <div className="bg-gradient-to-r from-indigo-800 to-purple-800 rounded-lg shadow-lg p-6 animate-fade-in">
         <h2 className="text-lg font-semibold text-white mb-4">Generate Schedule</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <input
-            type="text"
-            name="subjectName"
-            value={input.subjectName}
-            onChange={handleInputChange}
-            placeholder="Subject Name"
-            className="p-2 border rounded bg-gray-800 text-white placeholder-gray-400 focus:ring-2 focus:ring-cyan-400"
-          />
-          <select
-            name="difficulty"
-            value={input.difficulty}
-            onChange={handleInputChange}
-            className="p-2 border rounded bg-gray-800 text-white focus:ring-2 focus:ring-cyan-400"
-          >
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
-          <select
-            name="priority"
-            value={input.priority}
-            onChange={handleInputChange}
-            className="p-2 border rounded bg-gray-800 text-white focus:ring-2 focus:ring-cyan-400"
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
+        
+        {/* Subject Selection */}
+        <div className="mb-6">
+          <p className="text-gray-300 text-sm mb-4">Select subjects to include in schedule:</p>
+          {subjects.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-400 text-sm">No subjects available.</p>
+              <p className="text-gray-400 text-xs mt-1">
+                Please create some subjects first in the "Subjects" section.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto mb-4">
+              {subjects.map((subject) => (
+                <label key={subject._id} className="flex items-center cursor-pointer p-3 bg-gray-700 rounded hover:bg-gray-600 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={selectedSubjectIds.includes(subject._id)}
+                    onChange={() => handleSubjectSelection(subject._id)}
+                    className="mr-3 w-4 h-4 text-cyan-600 bg-gray-700 border-gray-600 rounded focus:ring-cyan-500"
+                  />
+                  <div className="flex-1">
+                    <span className="text-white font-medium">{subject.name}</span>
+                    <div className="text-xs text-gray-300">
+                      {subject.difficulty} • {subject.priority} priority • {subject.progress}% complete
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Date and Time Selection */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="relative">
+            <label className="block text-gray-300 text-sm mb-1">Start Date</label>
             <input
               type="text"
               value={input.preferredDate}
               onClick={() => setShowCalendar(!showCalendar)}
               placeholder="Select Date"
               readOnly
-              className="p-2 border rounded w-full bg-gray-800 text-white placeholder-gray-400 focus:ring-2 focus:ring-cyan-400"
+              className="p-3 border rounded w-full bg-gray-800 text-white placeholder-gray-400 focus:ring-2 focus:ring-cyan-400 cursor-pointer"
             />
             {showCalendar && (
               <div className="absolute z-10 mt-2">
                 <Calendar
                   onChange={handleDateChange}
                   value={new Date(input.preferredDate)}
-                  className="border rounded shadow-sm bg-gray-800 text-white"
+                  className="border rounded shadow-lg bg-gray-800 text-white"
                 />
               </div>
             )}
           </div>
-          <input
-            type="time"
-            name="preferredTime"
-            value={input.preferredTime}
-            onChange={handleInputChange}
-            className="p-2 border rounded bg-gray-800 text-white focus:ring-2 focus:ring-cyan-400"
-          />
-          <button
-            onClick={generateSchedule}
-            className="col-span-1 md:col-span-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded hover:from-cyan-600 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-cyan-400 transition-colors duration-200"
-            disabled={!input.subjectName.trim()}
-          >
-            Generate Schedule
-          </button>
+          <div>
+            <label className="block text-gray-300 text-sm mb-1">Start Time</label>
+            <input
+              type="time"
+              name="preferredTime"
+              value={input.preferredTime}
+              onChange={handleInputChange}
+              className="p-3 border rounded w-full bg-gray-800 text-white focus:ring-2 focus:ring-cyan-400"
+            />
+          </div>
         </div>
+
+        {/* Generate Button */}
+        <button
+          onClick={generateSchedule}
+          className="w-full px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-cyan-400 transition-all duration-200 font-medium"
+          disabled={selectedSubjectIds.length === 0}
+        >
+          {selectedSubjectIds.length === 0 
+            ? 'Select subjects to generate schedule' 
+            : `Generate Schedule for ${selectedSubjectIds.length} subject${selectedSubjectIds.length !== 1 ? 's' : ''}`
+          }
+        </button>
       </div>
 
       <div className="bg-gradient-to-r from-indigo-800 to-purple-800 rounded-lg shadow-lg p-6 animate-fade-in">
         <h2 className="text-lg font-semibold text-white mb-4">Recommended Schedule</h2>
         {schedules.length === 0 ? (
-          <p className="text-gray-300">No recommendations available</p>
+          <div className="text-center py-8">
+            <CalendarIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-300 mb-2">No schedule recommendations yet</p>
+            <p className="text-sm text-gray-400">
+              Select subjects above and click "Generate Schedule" to get personalized recommendations
+            </p>
+          </div>
         ) : (
           <div className="space-y-4">
-            {schedules.map((schedule) => (
+            {schedules.map((schedule, index) => (
               <div
-                key={schedule._id}
+                key={`schedule-${index}`}
                 className="p-4 bg-white bg-opacity-10 rounded-lg hover:bg-opacity-20 cursor-pointer transition-colors duration-200"
                 onClick={() => setSelectedSchedule(schedule)}
               >
                 <h3 className="font-medium text-white">
-                  Subject: {(typeof schedule.subjectId === 'object' ? schedule.subjectId.name : schedule.subjectId) || 'Unknown'}
+                  Subject: {schedule.subjectId}
                 </h3>
                 <p className="text-gray-300">Time: {format(new Date(schedule.recommendedDate), 'PPP p')}</p>
                 <p className="text-gray-300">Duration: {schedule.duration} min</p>
@@ -253,11 +295,13 @@ const AdaptiveSchedulePage: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in">
           <div className="bg-gradient-to-r from-indigo-800 to-purple-800 rounded-lg p-6 max-w-md w-full shadow-lg">
             <h2 className="text-lg font-semibold text-white mb-4">Schedule Details</h2>
-            <p className="text-gray-300"><strong>Subject:</strong> {(typeof selectedSchedule.subjectId === 'object' ? selectedSchedule.subjectId.name : selectedSchedule.subjectId) || 'Unknown'}</p>
+            <p className="text-gray-300"><strong>Subject:</strong> {selectedSchedule.subjectId}</p>
             <p className="text-gray-300"><strong>Time:</strong> {format(new Date(selectedSchedule.recommendedDate), 'PPP p')}</p>
             <p className="text-gray-300"><strong>Duration:</strong> {selectedSchedule.duration} min</p>
             <p className="text-gray-300"><strong>Priority:</strong> {selectedSchedule.priority}</p>
-            <p className="text-gray-300"><strong>Reasoning:</strong> {selectedSchedule.reasoning}</p>
+            {selectedSchedule.reasoning && (
+              <p className="text-gray-300"><strong>Reasoning:</strong> {selectedSchedule.reasoning}</p>
+            )}
             <button
               onClick={() => setSelectedSchedule(null)}
               className="mt-4 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded hover:from-cyan-600 hover:to-blue-600"

@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Navbar from './components/Layout/Navbar';
 import Dashboard from './components/Dashboard/Dashboard';
-import AdaptiveSchedulePage from './components/Dashboard/AdaptiveSchedulePage';
+import SchedulePage from './components/Schedule/SchedulePage';
 import Subjects from './components/Dashboard/Subjects';
 import Analytics from './components/Dashboard/Analytics';
 import UserProfile from './components/Dashboard/UserProfile';
@@ -61,7 +61,8 @@ const App: React.FC = () => (
               <ProtectedRoute>
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
-                  <Route path="/schedule" element={<AdaptiveSchedulePage />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/schedule" element={<SchedulePage />} />
                   <Route path="/subjects" element={<Subjects />} />
                   <Route path="/analytics" element={<Analytics />} />
                   <Route path="/profile" element={<UserProfile />} />

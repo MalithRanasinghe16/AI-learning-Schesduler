@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { BookOpen, Plus, Trash2, Edit } from "lucide-react";
 import { apiService } from "../../services/api";
 import { Subject } from "../../types";
@@ -31,6 +31,10 @@ const Subjects: React.FC = () => {
   });
   const [isAdding, setIsAdding] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  
+  // For debouncing progress updates
+  const [localProgress, setLocalProgress] = useState<{[key: string]: number}>({});
+  const progressTimeouts = useRef<{[key: string]: number}>({});
 
   useEffect(() => {
     const fetchSubjects = async () => {
@@ -83,6 +87,50 @@ const Subjects: React.FC = () => {
       toast.error(`Failed to update progress: ${error.message}`);
     }
   };
+
+  // Debounced progress update handler
+  const handleProgressChange = useCallback((id: string, newProgress: number) => {
+    // Update local state immediately for responsive UI
+    setLocalProgress(prev => ({ ...prev, [id]: newProgress }));
+    
+    // Clear existing timeout for this subject
+    if (progressTimeouts.current[id]) {
+      clearTimeout(progressTimeouts.current[id]);
+    }
+    
+    // Set new timeout to update progress after user stops sliding
+    progressTimeouts.current[id] = window.setTimeout(async () => {
+      try {
+        const { subject } = await apiService.updateSubjectProgress(id, newProgress);
+        setSubjects(prevSubjects => prevSubjects.map((s) => (s._id === id ? subject : s)));
+        toast.success("Progress updated!");
+        
+        // Remove from local progress after API update
+        setLocalProgress(prev => {
+          const updated = { ...prev };
+          delete updated[id];
+          return updated;
+        });
+      } catch (error: any) {
+        toast.error(`Failed to update progress: ${error.message}`);
+        // Revert local progress on error
+        setLocalProgress(prev => {
+          const updated = { ...prev };
+          delete updated[id];
+          return updated;
+        });
+      }
+    }, 800); // Wait 800ms after user stops sliding
+  }, []);
+
+  // Clean up timeouts on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(progressTimeouts.current).forEach(timeout => {
+        clearTimeout(timeout);
+      });
+    };
+  }, []);
 
   const handleDeleteSubject = async (id: string) => {
     try {
@@ -365,22 +413,49 @@ const Subjects: React.FC = () => {
                   Difficulty: {subject.difficulty}
                 </p>
                 <div className="mt-2">
-                  <label className="text-gray-300 text-sm">
-                    Progress: {subject.progress}%
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-gray-300 text-sm">
+                      Progress: {localProgress[subject._id] ?? subject.progress}%
+                    </label>
+                    <div className="relative group">
+                      <svg 
+                        className="w-4 h-4 text-gray-400 cursor-help" 
+                        fill="currentColor" 
+                        viewBox="0 0 20 20"
+                      >
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                      </svg>
+                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10">
+                        Track your learning progress (affects AI scheduling priority)
+                      </div>
+                    </div>
+                  </div>
                   <input
                     type="range"
                     min="0"
                     max="100"
-                    value={subject.progress}
+                    value={localProgress[subject._id] ?? subject.progress}
                     onChange={(e) =>
-                      handleUpdateProgress(
+                      handleProgressChange(
                         subject._id,
                         parseInt(e.target.value)
                       )
                     }
                     className="w-full accent-cyan-400"
                   />
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>Not Started</span>
+                    <span>In Progress</span>
+                    <span>Complete</span>
+                  </div>
+                  {(localProgress[subject._id] ?? subject.progress) >= 100 && (
+                    <div className="flex items-center mt-2 text-green-400 text-sm">
+                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                      Subject Completed!
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

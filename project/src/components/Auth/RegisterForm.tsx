@@ -51,7 +51,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
     }
 
     try {
-      await register(formData.firstName, formData.lastName, formData.email, formData.password, () => navigate('./dashboard'));
+      await register(formData.firstName, formData.lastName, formData.email, formData.password, () => navigate('/dashboard'));
     } catch (err: any) {
       setError(err.message || 'Registration failed');
       toast.error(err.message || 'Registration failed');

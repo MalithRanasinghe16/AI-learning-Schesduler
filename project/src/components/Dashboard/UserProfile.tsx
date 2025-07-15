@@ -32,7 +32,7 @@ const UserProfile: React.FC = () => {
           email: user.email,
           dailyStudyGoal: user.learningPreferences?.dailyStudyGoal || 120,
           preferredTimeSlots: user.learningPreferences?.preferredTimeSlots || ['14:00'],
-          difficultyLevel: user.learningPreferences?.difficultyLevel || 'beginner',
+          difficultyLevel: (user.learningPreferences?.difficultyLevel as 'beginner' | 'intermediate' | 'advanced') || 'beginner',
         });
       } catch (err: any) {
         setError(`Failed to fetch profile: ${err.message}`);
@@ -69,12 +69,17 @@ const UserProfile: React.FC = () => {
   const saveProfile = async () => {
     try {
       setError(null);
-      const preferences = {
-        dailyStudyGoal: formData.dailyStudyGoal,
-        preferredTimeSlots: formData.preferredTimeSlots,
-        difficultyLevel: formData.difficultyLevel,
+      const updates = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        learningPreferences: {
+          dailyStudyGoal: formData.dailyStudyGoal,
+          preferredTimeSlots: formData.preferredTimeSlots,
+          difficultyLevel: formData.difficultyLevel,
+        }
       };
-      const { user } = await apiService.updatePreferences(preferences);
+      const { user } = await apiService.updateProfile(updates);
       setUser(user);
       setIsEditing(false);
       toast.success('Profile updated successfully!');
