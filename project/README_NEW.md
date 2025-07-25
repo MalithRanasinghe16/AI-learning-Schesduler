@@ -5,11 +5,13 @@ An intelligent learning scheduler that uses AI to optimize study sessions and tr
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - **Node.js** (v18 or higher)
 - **Python** (3.8 or higher)
 - **MongoDB** (Atlas or local)
 
 ### 1. Install Dependencies
+
 ```bash
 npm install
 cd chatbot
@@ -17,9 +19,11 @@ pip install -r requirements.txt
 ```
 
 ### 2. Environment Setup
+
 Create `.env` files with your MongoDB URI and JWT secrets (see `.env.example`).
 
 ### 3. Start Services
+
 ```bash
 # Terminal 1: Backend (Port 5000)
 npm run dev:server
@@ -33,6 +37,7 @@ npm run dev
 ```
 
 ### 4. Access Application
+
 - **Frontend**: http://localhost:5173
 - **Backend API**: http://localhost:5000
 - **Chatbot API**: http://localhost:8000

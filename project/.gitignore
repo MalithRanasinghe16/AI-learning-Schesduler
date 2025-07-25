@@ -22,4 +22,33 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment files
 .env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+chatbot_env/
+chatbot/.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# AI/ML
+*.pkl
+*.joblib
+models/
+data/
+
+# Database
+*.db
+*.sqlite

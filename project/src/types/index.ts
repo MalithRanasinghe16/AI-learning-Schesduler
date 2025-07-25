@@ -19,7 +19,7 @@ export interface Subject {
   _id: string;
   name: string;
   description?: string;
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  difficulty: "beginner" | "intermediate" | "advanced";
   progress: number;
   userId: string;
 }
@@ -32,7 +32,7 @@ export interface StudySession {
   plannedDuration: number;
   actualDuration?: number;
   focusScore?: number;
-  status: 'scheduled' | 'in-progress' | 'completed';
+  status: "scheduled" | "in-progress" | "completed";
 }
 
 export interface ScheduleRecommendation {
@@ -67,13 +67,12 @@ export interface ScheduleSession {
   startTime: string;
   endTime: string;
   duration: number; // minutes
-  status: 'scheduled' | 'in-progress' | 'completed' | 'missed' | 'rescheduled';
+  status: "scheduled" | "in-progress" | "completed" | "missed" | "rescheduled";
   priority: number; // 1-5
-  sessionType: 'study' | 'review' | 'practice' | 'break';
+  sessionType: "study" | "review" | "practice" | "break";
   adaptationReason?: string;
   createdAt?: string;
   updatedAt?: string;
-  isMockData?: boolean; // Flag to identify mock/test data
 }
 
 export interface Schedule {
@@ -83,17 +82,20 @@ export interface Schedule {
   startDate: string;
   endDate: string;
   sessions: ScheduleSession[];
-  status: 'active' | 'completed' | 'archived';
-  scheduleType: 'real' | 'demo' | 'template'; // Type of schedule
+  status: "active" | "completed" | "archived";
+  scheduleType: "real" | "demo" | "template"; // Type of schedule
   adaptations: Adaptation[];
   createdAt?: string;
   updatedAt?: string;
-  isMockData?: boolean; // Flag to identify mock/test data (deprecated, use scheduleType)
 }
 
 export interface Adaptation {
   timestamp: string;
-  type: 'reschedule' | 'duration_change' | 'priority_adjust' | 'auto_reschedule';
+  type:
+    | "reschedule"
+    | "duration_change"
+    | "priority_adjust"
+    | "auto_reschedule";
   reason: string;
   oldValue: any;
   newValue: any;
@@ -106,9 +108,9 @@ export interface CalendarEvent {
   end: Date;
   subjectId: string;
   subjectName: string;
-  status: ScheduleSession['status'];
+  status: ScheduleSession["status"];
   priority: number;
-  sessionType: ScheduleSession['sessionType'];
+  sessionType: ScheduleSession["sessionType"];
   duration: number;
   canEdit: boolean;
 }

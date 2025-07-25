@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Schedule, Subject, ScheduleSession } from '../../types';
-import { format } from 'date-fns';
-import { Edit, Clock, BookOpen, BarChart3, Calendar } from 'lucide-react';
+import React, { useState } from "react";
+import { Schedule, Subject, ScheduleSession } from "../../types";
+import { format } from "date-fns";
+import { Edit, Clock, BookOpen, BarChart3, Calendar } from "lucide-react";
 
 interface SimpleScheduleViewProps {
   schedule: Schedule;
@@ -12,23 +12,25 @@ interface SimpleScheduleViewProps {
 const SimpleScheduleView: React.FC<SimpleScheduleViewProps> = ({
   schedule,
   subjects,
-  onSessionUpdate
+  onSessionUpdate,
 }) => {
-  const [editingSession, setEditingSession] = useState<ScheduleSession | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
-  
+  const [editingSession, setEditingSession] = useState<ScheduleSession | null>(
+    null
+  );
+  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+
   // Debug logging
-  console.log('=== SimpleScheduleView Debug ===');
-  console.log('Schedule:', schedule);
-  console.log('Schedule sessions:', schedule.sessions);
-  console.log('Sessions length:', schedule.sessions?.length || 0);
-  console.log('View mode:', viewMode);
-  console.log('Subjects:', subjects);
-  console.log('=== End Debug ===');
-  
+  console.log("=== SimpleScheduleView Debug ===");
+  console.log("Schedule:", schedule);
+  console.log("Schedule sessions:", schedule.sessions);
+  console.log("Sessions length:", schedule.sessions?.length || 0);
+  console.log("View mode:", viewMode);
+  console.log("Subjects:", subjects);
+  console.log("=== End Debug ===");
+
   // Group sessions by date
   const sessionsByDate = (schedule.sessions || []).reduce((acc, session) => {
-    const date = format(new Date(session.startTime), 'yyyy-MM-dd');
+    const date = format(new Date(session.startTime), "yyyy-MM-dd");
     if (!acc[date]) {
       acc[date] = [];
     }
@@ -37,22 +39,30 @@ const SimpleScheduleView: React.FC<SimpleScheduleViewProps> = ({
   }, {} as Record<string, ScheduleSession[]>);
 
   const getSubjectName = (subjectId: string | Subject) => {
-    if (typeof subjectId === 'object') return subjectId.name;
-    const subject = subjects.find(s => s._id === subjectId);
-    return subject?.name || 'Unknown Subject';
+    if (typeof subjectId === "object") return subjectId.name;
+    const subject = subjects.find((s) => s._id === subjectId);
+    return subject?.name || "Unknown Subject";
   };
 
-  const getStatusColor = (status: ScheduleSession['status']) => {
+  const getStatusColor = (status: ScheduleSession["status"]) => {
     switch (status) {
-      case 'completed': return 'bg-green-500';
-      case 'in-progress': return 'bg-blue-500';
-      case 'missed': return 'bg-red-500';
-      case 'rescheduled': return 'bg-yellow-500';
-      default: return 'bg-gray-500';
+      case "completed":
+        return "bg-green-500";
+      case "in-progress":
+        return "bg-blue-500";
+      case "missed":
+        return "bg-red-500";
+      case "rescheduled":
+        return "bg-yellow-500";
+      default:
+        return "bg-gray-500";
     }
   };
 
-  const handleStatusChange = (session: ScheduleSession, newStatus: ScheduleSession['status']) => {
+  const handleStatusChange = (
+    session: ScheduleSession,
+    newStatus: ScheduleSession["status"]
+  ) => {
     const updatedSession = { ...session, status: newStatus };
     onSessionUpdate?.(updatedSession);
   };
@@ -65,15 +75,25 @@ const SimpleScheduleView: React.FC<SimpleScheduleViewProps> = ({
   const sessions = schedule.sessions || [];
   const stats = {
     total: sessions.length,
-    completed: sessions.filter(s => s.status === 'completed').length,
-    inProgress: sessions.filter(s => s.status === 'in-progress').length,
-    scheduled: sessions.filter(s => s.status === 'scheduled').length,
-    missed: sessions.filter(s => s.status === 'missed').length,
-    totalHours: Math.round(sessions.reduce((acc, s) => acc + s.duration, 0) / 60 * 10) / 10,
-    completedHours: Math.round(sessions.filter(s => s.status === 'completed').reduce((acc, s) => acc + s.duration, 0) / 60 * 10) / 10
+    completed: sessions.filter((s) => s.status === "completed").length,
+    inProgress: sessions.filter((s) => s.status === "in-progress").length,
+    scheduled: sessions.filter((s) => s.status === "scheduled").length,
+    missed: sessions.filter((s) => s.status === "missed").length,
+    totalHours:
+      Math.round((sessions.reduce((acc, s) => acc + s.duration, 0) / 60) * 10) /
+      10,
+    completedHours:
+      Math.round(
+        (sessions
+          .filter((s) => s.status === "completed")
+          .reduce((acc, s) => acc + s.duration, 0) /
+          60) *
+          10
+      ) / 10,
   };
 
-  const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+  const completionRate =
+    stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
 
   return (
     <div className="bg-gray-800 rounded-lg p-6">
@@ -81,32 +101,36 @@ const SimpleScheduleView: React.FC<SimpleScheduleViewProps> = ({
       <div className="mb-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-2">{schedule.name}</h2>
+            <h2 className="text-2xl font-bold text-white mb-2">
+              {schedule.name}
+            </h2>
             <p className="text-gray-300">
-              {sessions.length} sessions from {format(new Date(schedule.startDate), 'MMM dd')} to {format(new Date(schedule.endDate), 'MMM dd')}
+              {sessions.length} sessions from{" "}
+              {format(new Date(schedule.startDate), "MMM dd")} to{" "}
+              {format(new Date(schedule.endDate), "MMM dd")}
             </p>
           </div>
-          
+
           {/* View Toggle */}
           <div className="flex items-center space-x-2 mt-4 lg:mt-0">
             <div className="flex bg-gray-700 rounded-lg p-1">
               <button
-                onClick={() => setViewMode('list')}
+                onClick={() => setViewMode("list")}
                 className={`flex items-center px-3 py-2 rounded text-sm transition-colors ${
-                  viewMode === 'list' 
-                    ? 'bg-cyan-500 text-white' 
-                    : 'text-gray-300 hover:text-white'
+                  viewMode === "list"
+                    ? "bg-cyan-500 text-white"
+                    : "text-gray-300 hover:text-white"
                 }`}
               >
                 <BookOpen className="h-4 w-4 mr-1" />
                 List
               </button>
               <button
-                onClick={() => setViewMode('calendar')}
+                onClick={() => setViewMode("calendar")}
                 className={`flex items-center px-3 py-2 rounded text-sm transition-colors ${
-                  viewMode === 'calendar' 
-                    ? 'bg-cyan-500 text-white' 
-                    : 'text-gray-300 hover:text-white'
+                  viewMode === "calendar"
+                    ? "bg-cyan-500 text-white"
+                    : "text-gray-300 hover:text-white"
                 }`}
               >
                 <Calendar className="h-4 w-4 mr-1" />
@@ -124,55 +148,65 @@ const SimpleScheduleView: React.FC<SimpleScheduleViewProps> = ({
                 <BarChart3 className="h-5 w-5 text-cyan-400 mr-2" />
                 <div>
                   <p className="text-gray-300 text-sm">Completion</p>
-                  <p className="text-white text-lg font-semibold">{completionRate}%</p>
+                  <p className="text-white text-lg font-semibold">
+                    {completionRate}%
+                  </p>
                 </div>
               </div>
             </div>
             {/* Progress Bar */}
             <div className="w-full bg-gray-600 rounded-full h-2">
-              <div 
+              <div
                 className="bg-gradient-to-r from-green-500 to-cyan-500 h-2 rounded-full transition-all duration-300"
                 style={{ width: `${completionRate}%` }}
               ></div>
             </div>
           </div>
-          
+
           <div className="bg-gray-700 rounded-lg p-4">
             <div className="flex items-center">
               <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
               <div>
                 <p className="text-gray-300 text-sm">Completed</p>
-                <p className="text-white text-lg font-semibold">{stats.completed}</p>
+                <p className="text-white text-lg font-semibold">
+                  {stats.completed}
+                </p>
               </div>
             </div>
           </div>
-          
+
           <div className="bg-gray-700 rounded-lg p-4">
             <div className="flex items-center">
               <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
               <div>
                 <p className="text-gray-300 text-sm">In Progress</p>
-                <p className="text-white text-lg font-semibold">{stats.inProgress}</p>
+                <p className="text-white text-lg font-semibold">
+                  {stats.inProgress}
+                </p>
               </div>
             </div>
           </div>
-          
+
           <div className="bg-gray-700 rounded-lg p-4">
             <div className="flex items-center">
               <div className="w-3 h-3 rounded-full bg-gray-500 mr-2" />
               <div>
                 <p className="text-gray-300 text-sm">Scheduled</p>
-                <p className="text-white text-lg font-semibold">{stats.scheduled}</p>
+                <p className="text-white text-lg font-semibold">
+                  {stats.scheduled}
+                </p>
               </div>
             </div>
           </div>
-          
+
           <div className="bg-gray-700 rounded-lg p-4">
             <div className="flex items-center">
               <Clock className="h-5 w-5 text-cyan-400 mr-2" />
               <div>
                 <p className="text-gray-300 text-sm">Total Hours</p>
-                <p className="text-white text-lg font-semibold">{stats.totalHours}h</p>
+                <p className="text-white text-lg font-semibold">
+                  {stats.totalHours}h
+                </p>
               </div>
             </div>
           </div>
@@ -180,95 +214,118 @@ const SimpleScheduleView: React.FC<SimpleScheduleViewProps> = ({
       </div>
 
       {/* Main Content - Toggle between List and Calendar */}
-      {viewMode === 'list' ? (
+      {viewMode === "list" ? (
         <div className="space-y-6">
           {Object.entries(sessionsByDate)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([date, sessions]) => (
               <div key={date} className="border-l-4 border-cyan-500 pl-4">
                 <h3 className="text-lg font-semibold text-white mb-3">
-                  {format(new Date(date), 'EEEE, MMMM dd')}
+                  {format(new Date(date), "EEEE, MMMM dd")}
                 </h3>
                 <div className="space-y-3">
                   {sessions
-                    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-                    .map(session => (
-                    <div key={session._id}>
-                      <div
-                        className="bg-gray-700 rounded-lg p-4 flex items-center justify-between hover:bg-gray-600 transition-colors"
-                      >
-                        <div className="flex items-center space-x-4">
-                          <div className={`w-3 h-3 rounded-full ${getStatusColor(session.status)}`} />
-                          <div>
-                            <h4 className="text-white font-medium flex items-center gap-2">
-                              {getSubjectName(session.subjectId)}
-                              {(session._id.startsWith('session-') || session.isMockData) && (
-                                <span className="px-2 py-1 text-xs bg-purple-600 text-white rounded">
-                                  MOCK
+                    .sort(
+                      (a, b) =>
+                        new Date(a.startTime).getTime() -
+                        new Date(b.startTime).getTime()
+                    )
+                    .map((session) => (
+                      <div key={session._id}>
+                        <div className="bg-gray-700 rounded-lg p-4 flex items-center justify-between hover:bg-gray-600 transition-colors">
+                          <div className="flex items-center space-x-4">
+                            <div
+                              className={`w-3 h-3 rounded-full ${getStatusColor(
+                                session.status
+                              )}`}
+                            />
+                            <div>
+                              <h4 className="text-white font-medium flex items-center gap-2">
+                                {getSubjectName(session.subjectId)}
+                                {session._id.startsWith("session-") && (
+                                  <span className="px-2 py-1 text-xs bg-purple-600 text-white rounded">
+                                    MOCK
+                                  </span>
+                                )}
+                              </h4>
+                              <div className="text-sm text-gray-300 flex items-center space-x-4">
+                                <span>
+                                  {format(
+                                    new Date(session.startTime),
+                                    "h:mm a"
+                                  )}{" "}
+                                  -{" "}
+                                  {format(new Date(session.endTime), "h:mm a")}
                                 </span>
-                              )}
-                            </h4>
-                            <div className="text-sm text-gray-300 flex items-center space-x-4">
-                              <span>
-                                {format(new Date(session.startTime), 'h:mm a')} - {format(new Date(session.endTime), 'h:mm a')}
-                              </span>
-                              <span>{session.duration} min</span>
-                              <span className="capitalize">{session.sessionType}</span>
-                              <span>Priority: {session.priority}/5</span>
+                                <span>{session.duration} min</span>
+                                <span className="capitalize">
+                                  {session.sessionType}
+                                </span>
+                                <span>Priority: {session.priority}/5</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        
-                        <div className="flex items-center space-x-2">
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full text-white ${getStatusColor(session.status)}`}>
-                            {session.status}
-                          </span>
-                          
-                          {/* Edit Button */}
-                          <button
-                            onClick={() => handleEditSession(session)}
-                            className="p-1 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors"
-                            title="Edit session"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          
-                          {/* Action Buttons */}
-                          {session.status === 'scheduled' && (
-                            <div className="flex space-x-1">
+
+                          <div className="flex items-center space-x-2">
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded-full text-white ${getStatusColor(
+                                session.status
+                              )}`}
+                            >
+                              {session.status}
+                            </span>
+
+                            {/* Edit Button */}
+                            <button
+                              onClick={() => handleEditSession(session)}
+                              className="p-1 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors"
+                              title="Edit session"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+
+                            {/* Action Buttons */}
+                            {session.status === "scheduled" && (
+                              <div className="flex space-x-1">
+                                <button
+                                  onClick={() =>
+                                    handleStatusChange(session, "in-progress")
+                                  }
+                                  className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-medium"
+                                >
+                                  Start
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    handleStatusChange(session, "completed")
+                                  }
+                                  className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors font-medium"
+                                >
+                                  Complete
+                                </button>
+                              </div>
+                            )}
+                            {session.status === "in-progress" && (
                               <button
-                                onClick={() => handleStatusChange(session, 'in-progress')}
-                                className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-medium"
-                              >
-                                Start
-                              </button>
-                              <button
-                                onClick={() => handleStatusChange(session, 'completed')}
+                                onClick={() =>
+                                  handleStatusChange(session, "completed")
+                                }
                                 className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors font-medium"
                               >
                                 Complete
                               </button>
-                            </div>
-                          )}
-                          {session.status === 'in-progress' && (
-                            <button
-                              onClick={() => handleStatusChange(session, 'completed')}
-                              className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors font-medium"
-                            >
-                              Complete
-                            </button>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
                     ))}
                 </div>
               </div>
             ))}
         </div>
       ) : (
-        <SimpleCalendarView 
-          sessions={sessions} 
+        <SimpleCalendarView
+          sessions={sessions}
           subjects={subjects}
           onSessionClick={handleEditSession}
         />
@@ -308,9 +365,11 @@ const SessionEditModal: React.FC<SessionEditModalProps> = ({
   session,
   subjects,
   onClose,
-  onSave
+  onSave,
 }) => {
-  const [editedSession, setEditedSession] = useState<ScheduleSession>({ ...session });
+  const [editedSession, setEditedSession] = useState<ScheduleSession>({
+    ...session,
+  });
 
   const handleSave = () => {
     onSave(editedSession);
@@ -320,7 +379,7 @@ const SessionEditModal: React.FC<SessionEditModalProps> = ({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
         <h3 className="text-xl font-bold text-white mb-4">Edit Session</h3>
-        
+
         <div className="space-y-4">
           {/* Subject Selection */}
           <div>
@@ -328,11 +387,20 @@ const SessionEditModal: React.FC<SessionEditModalProps> = ({
               Subject
             </label>
             <select
-              value={typeof editedSession.subjectId === 'string' ? editedSession.subjectId : editedSession.subjectId._id}
-              onChange={(e) => setEditedSession(prev => ({ ...prev, subjectId: e.target.value }))}
+              value={
+                typeof editedSession.subjectId === "string"
+                  ? editedSession.subjectId
+                  : editedSession.subjectId._id
+              }
+              onChange={(e) =>
+                setEditedSession((prev) => ({
+                  ...prev,
+                  subjectId: e.target.value,
+                }))
+              }
               className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-cyan-400"
             >
-              {subjects.map(subject => (
+              {subjects.map((subject) => (
                 <option key={subject._id} value={subject._id}>
                   {subject.name}
                 </option>
@@ -347,14 +415,19 @@ const SessionEditModal: React.FC<SessionEditModalProps> = ({
             </label>
             <input
               type="datetime-local"
-              value={format(new Date(editedSession.startTime), "yyyy-MM-dd'T'HH:mm")}
+              value={format(
+                new Date(editedSession.startTime),
+                "yyyy-MM-dd'T'HH:mm"
+              )}
               onChange={(e) => {
                 const newStartTime = new Date(e.target.value);
-                const newEndTime = new Date(newStartTime.getTime() + editedSession.duration * 60000);
-                setEditedSession(prev => ({ 
-                  ...prev, 
+                const newEndTime = new Date(
+                  newStartTime.getTime() + editedSession.duration * 60000
+                );
+                setEditedSession((prev) => ({
+                  ...prev,
                   startTime: newStartTime.toISOString(),
-                  endTime: newEndTime.toISOString()
+                  endTime: newEndTime.toISOString(),
                 }));
               }}
               className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-cyan-400"
@@ -374,11 +447,13 @@ const SessionEditModal: React.FC<SessionEditModalProps> = ({
               value={editedSession.duration}
               onChange={(e) => {
                 const duration = parseInt(e.target.value);
-                const newEndTime = new Date(new Date(editedSession.startTime).getTime() + duration * 60000);
-                setEditedSession(prev => ({ 
-                  ...prev, 
+                const newEndTime = new Date(
+                  new Date(editedSession.startTime).getTime() + duration * 60000
+                );
+                setEditedSession((prev) => ({
+                  ...prev,
                   duration,
-                  endTime: newEndTime.toISOString()
+                  endTime: newEndTime.toISOString(),
                 }));
               }}
               className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-cyan-400"
@@ -392,7 +467,12 @@ const SessionEditModal: React.FC<SessionEditModalProps> = ({
             </label>
             <select
               value={editedSession.sessionType}
-              onChange={(e) => setEditedSession(prev => ({ ...prev, sessionType: e.target.value as ScheduleSession['sessionType'] }))}
+              onChange={(e) =>
+                setEditedSession((prev) => ({
+                  ...prev,
+                  sessionType: e.target.value as ScheduleSession["sessionType"],
+                }))
+              }
               className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-cyan-400"
             >
               <option value="study">Study</option>
@@ -412,7 +492,12 @@ const SessionEditModal: React.FC<SessionEditModalProps> = ({
               min="1"
               max="5"
               value={editedSession.priority}
-              onChange={(e) => setEditedSession(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
+              onChange={(e) =>
+                setEditedSession((prev) => ({
+                  ...prev,
+                  priority: parseInt(e.target.value),
+                }))
+              }
               className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-cyan-400"
             />
           </div>
@@ -448,42 +533,47 @@ interface SimpleCalendarViewProps {
 const SimpleCalendarView: React.FC<SimpleCalendarViewProps> = ({
   sessions,
   subjects,
-  onSessionClick
+  onSessionClick,
 }) => {
   // Debug logging for calendar view
-  console.log('=== SimpleCalendarView Debug ===');
-  console.log('Received sessions:', sessions);
-  console.log('Sessions length:', sessions.length);
-  console.log('Received subjects:', subjects);
-  console.log('Subjects length:', subjects.length);
-  console.log('=== End Calendar Debug ===');
-  
+  console.log("=== SimpleCalendarView Debug ===");
+  console.log("Received sessions:", sessions);
+  console.log("Sessions length:", sessions.length);
+  console.log("Received subjects:", subjects);
+  console.log("Subjects length:", subjects.length);
+  console.log("=== End Calendar Debug ===");
+
   const getSubjectName = (subjectId: string | Subject) => {
-    if (typeof subjectId === 'object') return subjectId.name;
-    const subject = subjects.find(s => s._id === subjectId);
-    return subject?.name || 'Unknown Subject';
+    if (typeof subjectId === "object") return subjectId.name;
+    const subject = subjects.find((s) => s._id === subjectId);
+    return subject?.name || "Unknown Subject";
   };
 
-  const getStatusColor = (status: ScheduleSession['status']) => {
+  const getStatusColor = (status: ScheduleSession["status"]) => {
     switch (status) {
-      case 'completed': return 'bg-green-500';
-      case 'in-progress': return 'bg-blue-500';
-      case 'missed': return 'bg-red-500';
-      case 'rescheduled': return 'bg-yellow-500';
-      default: return 'bg-gray-500';
+      case "completed":
+        return "bg-green-500";
+      case "in-progress":
+        return "bg-blue-500";
+      case "missed":
+        return "bg-red-500";
+      case "rescheduled":
+        return "bg-yellow-500";
+      default:
+        return "bg-gray-500";
     }
   };
 
   // Group sessions by week
   const weekSessions = sessions.reduce((acc, session) => {
-    console.log('Processing session for calendar:', session);
+    console.log("Processing session for calendar:", session);
     const date = new Date(session.startTime);
-    console.log('Session date:', date);
+    console.log("Session date:", date);
     const weekStart = new Date(date);
     weekStart.setDate(date.getDate() - date.getDay()); // Start of week (Sunday)
-    const weekKey = format(weekStart, 'yyyy-MM-dd');
-    console.log('Week key:', weekKey);
-    
+    const weekKey = format(weekStart, "yyyy-MM-dd");
+    console.log("Week key:", weekKey);
+
     if (!acc[weekKey]) {
       acc[weekKey] = [];
     }
@@ -491,7 +581,7 @@ const SimpleCalendarView: React.FC<SimpleCalendarViewProps> = ({
     return acc;
   }, {} as Record<string, ScheduleSession[]>);
 
-  console.log('Week sessions grouped:', weekSessions);
+  console.log("Week sessions grouped:", weekSessions);
 
   // Check if there are any sessions to display
   if (sessions.length === 0) {
@@ -522,46 +612,68 @@ const SimpleCalendarView: React.FC<SimpleCalendarViewProps> = ({
           return (
             <div key={weekStart} className="bg-gray-700 rounded-lg p-4">
               <h3 className="text-lg font-semibold text-white mb-4">
-                Week of {format(startDate, 'MMM dd')} - {format(endDate, 'MMM dd, yyyy')}
+                Week of {format(startDate, "MMM dd")} -{" "}
+                {format(endDate, "MMM dd, yyyy")}
               </h3>
-              
+
               <div className="grid grid-cols-7 gap-2">
                 {/* Day Headers */}
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="text-center text-gray-300 text-sm font-medium py-2">
-                    {day}
-                  </div>
-                ))}
-                
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                  (day) => (
+                    <div
+                      key={day}
+                      className="text-center text-gray-300 text-sm font-medium py-2"
+                    >
+                      {day}
+                    </div>
+                  )
+                )}
+
                 {/* Calendar Days */}
                 {Array.from({ length: 7 }, (_, dayIndex) => {
                   const currentDate = new Date(startDate);
                   currentDate.setDate(startDate.getDate() + dayIndex);
-                  const dayKey = format(currentDate, 'yyyy-MM-dd');
-                  const daySessions = weekSessions.filter(session => 
-                    format(new Date(session.startTime), 'yyyy-MM-dd') === dayKey
+                  const dayKey = format(currentDate, "yyyy-MM-dd");
+                  const daySessions = weekSessions.filter(
+                    (session) =>
+                      format(new Date(session.startTime), "yyyy-MM-dd") ===
+                      dayKey
                   );
 
                   return (
-                    <div key={dayIndex} className="min-h-[120px] bg-gray-800 rounded p-2">
+                    <div
+                      key={dayIndex}
+                      className="min-h-[120px] bg-gray-800 rounded p-2"
+                    >
                       <div className="text-xs text-gray-400 mb-2">
-                        {format(currentDate, 'dd')}
+                        {format(currentDate, "dd")}
                       </div>
                       <div className="space-y-1">
                         {daySessions
-                          .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-                          .map(session => (
+                          .sort(
+                            (a, b) =>
+                              new Date(a.startTime).getTime() -
+                              new Date(b.startTime).getTime()
+                          )
+                          .map((session) => (
                             <div
                               key={session._id}
                               onClick={() => onSessionClick(session)}
-                              className={`text-xs p-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getStatusColor(session.status)}`}
-                              title={`${getSubjectName(session.subjectId)} - ${format(new Date(session.startTime), 'h:mm a')}`}
+                              className={`text-xs p-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getStatusColor(
+                                session.status
+                              )}`}
+                              title={`${getSubjectName(
+                                session.subjectId
+                              )} - ${format(
+                                new Date(session.startTime),
+                                "h:mm a"
+                              )}`}
                             >
                               <div className="text-white font-medium truncate">
                                 {getSubjectName(session.subjectId)}
                               </div>
                               <div className="text-white text-xs opacity-90">
-                                {format(new Date(session.startTime), 'h:mm a')}
+                                {format(new Date(session.startTime), "h:mm a")}
                               </div>
                             </div>
                           ))}

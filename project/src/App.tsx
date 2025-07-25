@@ -1,30 +1,33 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ScheduleProvider } from './contexts/ScheduleContext';
-import Navbar from './components/Layout/Navbar';
-import Dashboard from './components/Dashboard/Dashboard';
-import SchedulePage from './components/Schedule/SchedulePage';
-import Subjects from './components/Dashboard/Subjects';
-import Analytics from './components/Dashboard/Analytics';
-import UserProfile from './components/Dashboard/UserProfile';
-import LoginForm from './components/Auth/LoginForm';
-import RegisterForm from './components/Auth/RegisterForm';
-
+import React, { useState } from "react";
+import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ScheduleProvider } from "./contexts/ScheduleContext";
+import Navbar from "./components/Layout/Navbar";
+import Dashboard from "./components/Dashboard/Dashboard";
+import SchedulePage from "./components/Schedule/SchedulePage";
+import Subjects from "./components/Dashboard/Subjects";
+import Analytics from "./components/Dashboard/Analytics";
+import UserProfile from "./components/Dashboard/UserProfile";
+import LoginForm from "./components/Auth/LoginForm";
+import RegisterForm from "./components/Auth/RegisterForm";
+import ChatWidget from "./components/Chat/ChatWidget";
 
 const LoginWithNavigate = () => {
   const navigate = useNavigate();
-  return <LoginForm onSwitchToRegister={() => navigate('/register')} />;
+  return <LoginForm onSwitchToRegister={() => navigate("/register")} />;
 };
 
 const RegisterWithNavigate = () => {
   const navigate = useNavigate();
-  return <RegisterForm onSwitchToLogin={() => navigate('/login')} />;
+  return <RegisterForm onSwitchToLogin={() => navigate("/login")} />;
 };
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -35,7 +38,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
 
   if (!user) {
-    navigate('/login');
+    navigate("/login");
     return null;
   }
 
@@ -45,6 +48,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
       <main className="flex-grow bg-gradient-to-b from-gray-900 to-indigo-900">
         {children}
       </main>
+      <ChatWidget
+        isOpen={isChatOpen}
+        onToggle={() => setIsChatOpen(!isChatOpen)}
+      />
     </>
   );
 };
