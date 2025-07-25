@@ -462,121 +462,171 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onToggle }) => {
   return (
     <div className="fixed bottom-4 right-4 z-50 w-96 h-[500px] bg-white rounded-lg shadow-2xl border border-gray-200 flex flex-col">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-t-lg flex items-center justify-between">
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-t-lg flex items-center justify-between shadow-lg">
         <div className="flex items-center space-x-3">
-          <Bot className="w-6 h-6" />
+          <div className="relative">
+            <Bot className="w-7 h-7" />
+            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white animate-pulse"></div>
+          </div>
           <div>
-            <h3 className="font-semibold">AI Study Assistant</h3>
-            <p className="text-sm opacity-90">Online</p>
+            <h3 className="font-bold text-lg">AI Study Assistant</h3>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <p className="text-sm font-medium opacity-90">
+                Online & Ready to Help
+              </p>
+            </div>
           </div>
         </div>
         <button
           onClick={onToggle}
-          className="p-1 hover:bg-white/20 rounded"
+          className="p-2 hover:bg-white/20 rounded-lg transition-colors duration-200"
           aria-label="Minimize chat"
+          title="Minimize chat"
         >
           <Minimize2 className="w-5 h-5" />
         </button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${
-              message.sender === "user" ? "justify-end" : "justify-start"
-            }`}
-          >
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-gray-50 to-blue-50">
+        {messages.length === 0 ? (
+          <div className="text-center py-8">
+            <Bot className="w-16 h-16 text-blue-400 mx-auto mb-4 animate-pulse" />
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">
+              Welcome to your AI Learning Scheduler!
+            </h3>
+            <p className="text-gray-600 max-w-sm mx-auto mb-6">
+              I'm here to help you organize your study schedule efficiently. You
+              can:
+            </p>
+            <div className="grid grid-cols-2 gap-3 max-w-xs mx-auto text-sm">
+              <div className="bg-white p-3 rounded-lg shadow-sm border">
+                <Plus className="w-5 h-5 text-blue-500 mx-auto mb-1" />
+                <span className="text-gray-700 font-medium">Add Subjects</span>
+              </div>
+              <div className="bg-white p-3 rounded-lg shadow-sm border">
+                <Calendar className="w-5 h-5 text-green-500 mx-auto mb-1" />
+                <span className="text-gray-700 font-medium">
+                  Create Schedules
+                </span>
+              </div>
+              <div className="bg-white p-3 rounded-lg shadow-sm border">
+                <Eye className="w-5 h-5 text-purple-500 mx-auto mb-1" />
+                <span className="text-gray-700 font-medium">View Progress</span>
+              </div>
+              <div className="bg-white p-3 rounded-lg shadow-sm border">
+                <BarChart3 className="w-5 h-5 text-orange-500 mx-auto mb-1" />
+                <span className="text-gray-700 font-medium">Get Analytics</span>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-4">
+              Ask me anything or use the buttons below!
+            </p>
+          </div>
+        ) : (
+          messages.map((message) => (
             <div
-              className={`flex items-start space-x-2 max-w-[80%] ${
-                message.sender === "user"
-                  ? "flex-row-reverse space-x-reverse"
-                  : ""
+              key={message.id}
+              className={`flex ${
+                message.sender === "user" ? "justify-end" : "justify-start"
               }`}
             >
-              <div className="flex-shrink-0 mt-1">
-                {getMessageIcon(message.sender)}
-              </div>
               <div
-                className={`rounded-lg px-4 py-2 ${
+                className={`flex items-start space-x-2 max-w-[80%] ${
                   message.sender === "user"
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-800 border border-gray-200"
+                    ? "flex-row-reverse space-x-reverse"
+                    : ""
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                <div className="flex-shrink-0 mt-1">
+                  {getMessageIcon(message.sender)}
+                </div>
+                <div
+                  className={`rounded-lg px-4 py-2 ${
+                    message.sender === "user"
+                      ? "bg-blue-600 text-white"
+                      : "bg-white text-gray-800 border border-gray-200"
+                  }`}
+                >
+                  <p className="text-sm whitespace-pre-wrap">{message.text}</p>
 
-                {/* Quick Actions for Bot Messages */}
-                {message.sender === "bot" &&
-                  message.quickActions &&
-                  message.quickActions.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      <p className="text-xs text-gray-600 font-medium">
-                        Quick Actions:
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {message.quickActions.map((action) => (
-                          <button
-                            key={action.id}
-                            onClick={() => handleQuickAction(action)}
-                            className={`${action.color} text-white text-xs px-3 py-1.5 rounded-full flex items-center space-x-1 transition-colors shadow-sm hover:shadow-md`}
-                            disabled={isLoading}
-                          >
-                            {action.icon}
-                            <span>{action.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                {/* Suggestions for Bot Messages */}
-                {message.sender === "bot" &&
-                  message.suggestions &&
-                  message.suggestions.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      <p className="text-xs text-gray-600 font-medium">
-                        Suggestions:
-                      </p>
-                      <div className="space-y-1">
-                        {message.suggestions
-                          .slice(0, 3)
-                          .map((suggestion, index) => (
+                  {/* Quick Actions for Bot Messages */}
+                  {message.sender === "bot" &&
+                    message.quickActions &&
+                    message.quickActions.length > 0 && (
+                      <div className="mt-4 p-3 bg-gray-50 rounded-lg border">
+                        <p className="text-xs text-gray-700 font-semibold mb-3 flex items-center">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                          Choose an option:
+                        </p>
+                        <div className="grid grid-cols-1 gap-2">
+                          {message.quickActions.map((action) => (
                             <button
-                              key={index}
-                              onClick={() => handleSuggestionClick(suggestion)}
-                              className="block w-full text-left text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded border border-blue-200 hover:border-blue-300 transition-colors"
+                              key={action.id}
+                              onClick={() => handleQuickAction(action)}
+                              className={`${action.color} text-sm px-4 py-3 rounded-lg flex items-center space-x-3 transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105 hover:translate-y-[-1px] disabled:opacity-50 disabled:cursor-not-allowed font-medium`}
                               disabled={isLoading}
                             >
-                              💬 {suggestion}
+                              <span className="flex-shrink-0">
+                                {action.icon}
+                              </span>
+                              <span className="text-left">{action.label}</span>
                             </button>
                           ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                <div className="flex items-center justify-between mt-1">
-                  <span
-                    className={`text-xs ${
-                      message.sender === "user"
-                        ? "text-blue-100"
-                        : "text-gray-500"
-                    }`}
-                  >
-                    {formatTimestamp(message.timestamp)}
-                  </span>
-                  {message.intent && (
-                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded ml-2">
-                      {message.intent} (
-                      {Math.round((message.confidence || 0) * 100)}%)
+                  {/* Suggestions for Bot Messages */}
+                  {message.sender === "bot" &&
+                    message.suggestions &&
+                    message.suggestions.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs text-gray-600 font-medium">
+                          Suggestions:
+                        </p>
+                        <div className="space-y-1">
+                          {message.suggestions
+                            .slice(0, 3)
+                            .map((suggestion, index) => (
+                              <button
+                                key={index}
+                                onClick={() =>
+                                  handleSuggestionClick(suggestion)
+                                }
+                                className="block w-full text-left text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded border border-blue-200 hover:border-blue-300 transition-colors"
+                                disabled={isLoading}
+                              >
+                                💬 {suggestion}
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+
+                  <div className="flex items-center justify-between mt-1">
+                    <span
+                      className={`text-xs ${
+                        message.sender === "user"
+                          ? "text-blue-100"
+                          : "text-gray-500"
+                      }`}
+                    >
+                      {formatTimestamp(message.timestamp)}
                     </span>
-                  )}
+                    {message.intent && (
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded ml-2">
+                        {message.intent} (
+                        {Math.round((message.confidence || 0) * 100)}%)
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
 
         {isLoading && (
           <div className="flex justify-start">
@@ -596,7 +646,12 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onToggle }) => {
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-gray-200 bg-white rounded-b-lg">
+      <div className="p-4 border-t border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50 rounded-b-lg">
+        {!isLoading && (
+          <div className="text-xs text-gray-600 mb-2 text-center">
+            💡 Ask me to add subjects, create schedules, or view your progress
+          </div>
+        )}
         <div className="flex items-center space-x-2">
           <div className="flex-1 relative">
             <input
@@ -605,10 +660,19 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onToggle }) => {
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Type your message..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder={
+                isLoading
+                  ? "Please wait..."
+                  : "Ask me anything about your studies..."
+              }
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
               disabled={isLoading}
             />
+            {isLoading && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+              </div>
+            )}
           </div>
 
           {/* Voice input button */}
@@ -635,10 +699,15 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onToggle }) => {
           <button
             onClick={sendMessage}
             disabled={!inputText.trim() || isLoading}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white p-2 rounded-lg transition-colors"
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white p-3 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105 disabled:hover:scale-100"
             aria-label="Send message"
+            title={isLoading ? "Please wait..." : "Send message (Enter)"}
           >
-            <Send className="w-5 h-5" />
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Send className="w-5 h-5" />
+            )}
           </button>
         </div>
 
