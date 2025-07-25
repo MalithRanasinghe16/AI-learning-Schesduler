@@ -27,20 +27,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     const fetchUser = async () => {
+      console.log('AuthContext: fetchUser called with token:', !!token);
       if (!token) {
+        console.log('AuthContext: No token, setting loading false');
         setIsLoading(false);
         return;
       }
       try {
+        console.log('AuthContext: Setting auth token and fetching user...');
         setAuthToken(token);
         const { user } = await apiService.getUser();
+        console.log('AuthContext: User fetched successfully:', user);
         setUser(user);
       } catch (error: any) {
+        console.error('AuthContext: Failed to fetch user:', error);
         toast.error(`Failed to fetch user: ${error.message}`);
         setTokenState(null);
         localStorage.removeItem('token');
         setAuthToken(null);
       } finally {
+        console.log('AuthContext: Setting loading false');
         setIsLoading(false);
       }
     };
@@ -59,41 +65,63 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const login = async (email: string, password: string, onSuccess?: () => void) => {
+    console.log('AuthContext: Login started');
+    setIsLoading(true);
     try {
       const { token } = await apiService.login({ email, password });
+      console.log('AuthContext: Token received, setting token and fetching user');
       setToken(token);
       const { user } = await apiService.getUser();
+      console.log('AuthContext: User fetched during login:', user);
       setUser(user);
       toast.success('Logged in successfully!');
       if (onSuccess) onSuccess();
     } catch (error: any) {
+      console.error('AuthContext: Login error:', error);
       toast.error(`Login failed: ${error.message}`);
       throw error;
+    } finally {
+      console.log('AuthContext: Login process complete, setting loading false');
+      setIsLoading(false);
     }
   };
 
   const register = async (firstName: string, lastName: string, email: string, password: string, onSuccess?: () => void) => {
+    console.log('AuthContext: Register started');
+    setIsLoading(true);
     try {
       const { token } = await apiService.register({ firstName, lastName, email, password });
+      console.log('AuthContext: Token received, setting token and fetching user');
       setToken(token);
       const { user } = await apiService.getUser();
+      console.log('AuthContext: User fetched during register:', user);
       setUser(user);
       toast.success('Registered successfully!');
       if (onSuccess) onSuccess();
     } catch (error: any) {
+      console.error('AuthContext: Register error:', error);
       toast.error(`Registration failed: ${error.message}`);
       throw error;
+    } finally {
+      console.log('AuthContext: Register process complete, setting loading false');
+      setIsLoading(false);
     }
   };
 
   const logout = async () => {
+    console.log('AuthContext: Logout started');
     try {
       await apiService.logout();
+      console.log('AuthContext: Logout API call successful');
+    } catch (error: any) {
+      console.error('AuthContext: Logout API error:', error);
+      toast.error(`Logout failed: ${error.message}`);
+    } finally {
+      // Always clear local state regardless of API call result
+      console.log('AuthContext: Clearing user and token');
       setUser(null);
       setToken(null);
       toast.success('Logged out successfully!');
-    } catch (error: any) {
-      toast.error(`Logout failed: ${error.message}`);
     }
   };
 

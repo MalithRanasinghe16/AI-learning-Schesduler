@@ -37,9 +37,10 @@ export interface StudySession {
 
 export interface ScheduleRecommendation {
   subjectId: string;
-  scheduledDate: string;
+  recommendedDate: Date | string;
   duration: number;
   priority: number;
+  reasoning?: string;
 }
 
 export interface DashboardAnalytics {
@@ -57,4 +58,70 @@ export interface DashboardAnalytics {
     notStarted: number;
     details: { name: string; progress: number }[];
   };
+}
+
+export interface ScheduleSession {
+  _id: string;
+  scheduleId: string;
+  subjectId: string | Subject;
+  startTime: string;
+  endTime: string;
+  duration: number; // minutes
+  status: 'scheduled' | 'in-progress' | 'completed' | 'missed' | 'rescheduled';
+  priority: number; // 1-5
+  sessionType: 'study' | 'review' | 'practice' | 'break';
+  adaptationReason?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  isMockData?: boolean; // Flag to identify mock/test data
+}
+
+export interface Schedule {
+  _id: string;
+  userId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  sessions: ScheduleSession[];
+  status: 'active' | 'completed' | 'archived';
+  scheduleType: 'real' | 'demo' | 'template'; // Type of schedule
+  adaptations: Adaptation[];
+  createdAt?: string;
+  updatedAt?: string;
+  isMockData?: boolean; // Flag to identify mock/test data (deprecated, use scheduleType)
+}
+
+export interface Adaptation {
+  timestamp: string;
+  type: 'reschedule' | 'duration_change' | 'priority_adjust' | 'auto_reschedule';
+  reason: string;
+  oldValue: any;
+  newValue: any;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  subjectId: string;
+  subjectName: string;
+  status: ScheduleSession['status'];
+  priority: number;
+  sessionType: ScheduleSession['sessionType'];
+  duration: number;
+  canEdit: boolean;
+}
+
+export interface TimeSlot {
+  hour: number;
+  minute: number;
+  available: boolean;
+}
+
+export interface DaySchedule {
+  date: Date;
+  sessions: ScheduleSession[];
+  availableHours: number;
+  totalScheduledHours: number;
 }

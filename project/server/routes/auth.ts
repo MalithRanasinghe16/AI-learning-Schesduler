@@ -1,12 +1,27 @@
 import express, { Request, Response } from "express";
-import jwt from "jsonwebtoken";
+import jwt, { SignOptions } from "jsonwebtoken";
 import User from "../models/User";
 import { authenticateToken, AuthRequest } from "../middleware/auth";
+import { validateUser } from "../middleware/validation";
 
 const router = express.Router();
 
+// Helper function for generating JWT tokens
+const generateToken = (userId: string): string => {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET not configured');
+  }
+  
+  const signOptions: SignOptions = {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+  } as SignOptions;
+  
+  return jwt.sign({ userId }, jwtSecret, signOptions);
+};
+
 // Register
-router.post("/register", async (req: Request, res: Response): Promise<void> => {
+router.post("/register", validateUser, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, firstName, lastName, learningPreferences } =
       req.body;
@@ -30,11 +45,7 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
     await user.save();
 
     // Generate JWT token
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET!,
-      { expiresIn: Number(process.env.JWT_EXPIRES_IN) || 604800 } // 7 days in seconds
-    );
+    const token = generateToken(user._id.toString());
 
     res.status(201).json({
       message: "User created successfully",
@@ -78,11 +89,7 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
     await user.save();
 
     // Generate JWT token
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET!, {
-      expiresIn: process.env.JWT_EXPIRES_IN
-        ? parseInt(process.env.JWT_EXPIRES_IN, 10)
-        : 604800,
-    });
+    const token = generateToken(user._id.toString());
 
     res.json({
       message: "Login successful",
@@ -126,16 +133,16 @@ router.get(
 );
 
 // Update user preferences
-router.put(
+router.patch(
   "/preferences",
   authenticateToken,
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-      const { learningPreferences } = req.body;
+      const updates = req.body;
 
       const user = await User.findByIdAndUpdate(
         req.user!._id,
-        { learningPreferences },
+        updates,
         { new: true, runValidators: true }
       );
 
@@ -156,5 +163,57 @@ router.put(
     }
   }
 );
+
+// Update user profile
+router.patch(
+  "/me",
+  authenticateToken,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const updates = req.body;
+
+      const user = await User.findByIdAndUpdate(
+        req.user!._id,
+        updates,
+        { new: true, runValidators: true }
+      );
+
+      res.json({
+        message: "Profile updated successfully",
+        user: {
+          id: user!._id,
+          email: user!.email,
+          firstName: user!.firstName,
+          lastName: user!.lastName,
+          learningPreferences: user!.learningPreferences,
+          performanceMetrics: user!.performanceMetrics,
+        },
+      });
+    } catch (error) {
+      console.error("Update profile error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  }
+);
+
+// Logout
+router.post("/logout", authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // In a JWT-based system, logout is mainly handled on the client side
+    // by removing the token. We can optionally update the user's last active date.
+    if (req.user) {
+      await User.findByIdAndUpdate(req.user._id, {
+        'performanceMetrics.lastActiveDate': new Date()
+      });
+    }
+
+    res.json({
+      message: "Logout successful"
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
 
 export default router;

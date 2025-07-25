@@ -51,7 +51,16 @@ const userSchema = new Schema<IUser>({
   learningPreferences: {
     preferredTimeSlots: [{
       type: String,
-      enum: ['morning', 'afternoon', 'evening', 'night']
+      // Allow both time slots and specific times
+      validate: {
+        validator: function(value: string) {
+          // Allow time formats like "14:00" or predefined slots
+          const timePattern = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+          const validSlots = ['morning', 'afternoon', 'evening', 'night'];
+          return timePattern.test(value) || validSlots.includes(value);
+        },
+        message: 'Invalid time slot format. Use HH:MM or morning/afternoon/evening/night'
+      }
     }],
     difficultyLevel: {
       type: String,

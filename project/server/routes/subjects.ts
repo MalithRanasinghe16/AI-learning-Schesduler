@@ -1,6 +1,7 @@
 import express, { Response } from 'express';
 import Subject from '../models/Subject';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { validateSubject } from '../middleware/validation';
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response): Prom
 });
 
 // Create new subject
-router.post('/', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticateToken, validateSubject, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const subjectData = {
       ...req.body,

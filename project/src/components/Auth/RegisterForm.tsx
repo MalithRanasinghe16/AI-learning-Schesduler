@@ -51,7 +51,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
     }
 
     try {
-      await register(formData.firstName, formData.lastName, formData.email, formData.password, () => navigate('./dashboard'));
+      await register(formData.firstName, formData.lastName, formData.email, formData.password, () => navigate('/dashboard'));
     } catch (err: any) {
       setError(err.message || 'Registration failed');
       toast.error(err.message || 'Registration failed');
@@ -61,7 +61,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-900 to-indigo-900 py-12 px-4 sm:px-6 lg:px-8 test-css">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-900 to-indigo-900 py-12 px-4 sm:px-6 lg:px-8">
       <ToastContainer position="top-right" autoClose={3000} theme="dark" />
       <div className="bg-gradient-to-r from-indigo-800 to-purple-800 rounded-lg shadow-lg p-8 max-w-md w-full transform hover:scale-105 transition-transform duration-300 animate-fade-in">
         <div className="text-center">

@@ -3,15 +3,15 @@ import jwt from 'jsonwebtoken';
 import User, { IUser } from '../models/User';
 
 export interface AuthRequest extends Request {
-   req: { id: string; };
-   user?: {
-     _id: any;
-     email: any;
-     firstName: any;
-     lastName: any;
-     learningPreferences: any;
-     performanceMetrics: any; id: string; 
-}; 
+  user?: {
+    _id: string;
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    learningPreferences: any;
+    performanceMetrics: any;
+  };
 }
 
 export const authenticateToken = async (
@@ -42,9 +42,21 @@ export const authenticateToken = async (
       return;
     }
 
-    req.user = { id: user._id };
+    req.user = {
+      _id: user._id,
+      id: user._id.toString(),
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      learningPreferences: user.learningPreferences,
+      performanceMetrics: user.performanceMetrics
+    };
     next();
   } catch (error) {
     res.status(403).json({ message: 'Invalid or expired token' });
   }
 };
+
+// Export both names for compatibility
+export const auth = authenticateToken;
+export default authenticateToken;
