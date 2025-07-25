@@ -1,58 +1,77 @@
 # 🤖 AI Learning Scheduler
 
-An intelligent learning scheduler that uses AI to optimize study sessions and track progress.
+An intelligent learning scheduler with AI-powered chatbot assistance for optimizing study sessions and tracking progress.
 
-## 🚀 Quick Start
+## ⚡ Quick Start
+
+```bash
+# One command to start everything
+.\start_all.bat
+```
+
+## 🏗️ Project Structure
+
+```
+AI-learning-Scheduler/
+├── 📄 README.md           # Project documentation
+├── 🚀 start_all.bat       # One-click startup
+├── 📦 package.json        # Node.js dependencies
+├── 🔧 .env               # Environment variables
+│
+├── 📂 src/               # React Frontend (Port 5173)
+│   ├── components/       # UI components
+│   ├── contexts/         # React contexts
+│   └── services/         # API services
+│
+├── 📂 server/            # Node.js Backend (Port 5000)
+│   ├── models/           # Database models
+│   ├── routes/           # API endpoints
+│   └── middleware/       # Auth & validation
+│
+└── � chatbot/           # Python AI Service (Port 8000)
+    ├── main.py           # FastAPI app
+    ├── �🚀 run_chatbot.ps1 # Quick start script
+    └── requirements.txt  # Python dependencies
+```
+
+## 🚀 Manual Setup (if needed)
 
 ### Prerequisites
-- **Node.js** (v18 or higher)
-- **Python** (3.8 or higher)
+
+- **Node.js** (v18+)
+- **Python** (3.8+)
 - **MongoDB** (Atlas or local)
 
 ### 1. Install Dependencies
+
 ```bash
 npm install
-cd chatbot
-pip install -r requirements.txt
+cd chatbot && pip install -r requirements.txt
 ```
 
-### 2. Environment Setup
-Create `.env` files with your MongoDB URI and JWT secrets (see `.env.example`).
+### 2. Configure Environment
+
+Copy `.env.example` to `.env` and update with your MongoDB URI.
 
 ### 3. Start Services
+
 ```bash
-# Terminal 1: Backend (Port 5000)
-npm run dev:server
+# Start all services with one command
+.\start_all.bat
 
-# Terminal 2: Chatbot (Port 8000)
-cd chatbot
-.\run_chatbot.bat
-
-# Terminal 3: Frontend (Port 5173)
-npm run dev
+# OR start individually:
+npm run dev:server    # Backend
+npm run dev          # Frontend
+cd chatbot && .\run_chatbot.ps1  # Chatbot
 ```
 
-### 4. Access Application
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:5000
-- **Chatbot API**: http://localhost:8000
-
-## 🏗️ Architecture
-
-```
-project/
-├── src/              # React frontend
-├── server/           # Node.js/Express backend
-├── chatbot/          # Python FastAPI chatbot
-└── package.json      # Project dependencies
-```
-
-## 🤖 Features
+## 🌟 Features
 
 - **Smart Scheduling**: AI-powered study session optimization
-- **Interactive Chatbot**: Natural language scheduling assistance
-- **Progress Tracking**: Analytics and performance insights
-- **User Authentication**: Secure JWT-based login system
+- **Interactive Chatbot**: Natural language scheduling with quick actions
+- **Progress Analytics**: Study performance insights and tracking
+- **User Authentication**: Secure JWT-based authentication
+- **Real-time Updates**: Live sync across all services
 
 ## 🛠️ Technology Stack
 
@@ -61,23 +80,22 @@ project/
 - **Chatbot**: Python + FastAPI + spaCy NLP
 - **Database**: MongoDB Atlas
 
-## 📚 API Documentation
+## 📚 API Endpoints
 
-- **Backend**: http://localhost:5000/api/docs
-- **Chatbot**: http://localhost:8000/docs
+- **Frontend**: http://localhost:5173
+- **Backend API**: http://localhost:5000/api
+- **Chatbot API**: http://localhost:8000/docs
 
 ## 🔧 Development
 
 ```bash
 # Install new dependencies
-npm install <package>
-pip install <package>
+npm install <package>              # Frontend/Backend
+cd chatbot && pip install <package> # Chatbot
 
-# Linting
-npm run lint
-
-# Build for production
-npm run build
+# Code quality
+npm run lint                       # Linting
+npm run build                      # Production build
 ```
 
 ## 📝 License

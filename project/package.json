@@ -4,13 +4,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "tsx server/server.ts",
     "dev": "vite",
+    "dev:server": "tsx watch server/server.ts",
+    "dev:chatbot": "cd chatbot && .venv\\Scripts\\python.exe -m uvicorn main:app --reload --port 8000",
     "build": "vite build",
-    "lint": "eslint .",
     "preview": "vite preview",
+    "start": "tsx server/server.ts",
     "server": "tsx server/server.ts",
-    "dev:server": "tsx watch server/server.ts"
+    "lint": "eslint .",
+    "clean": "rimraf dist node_modules/.cache",
+    "setup": "npm install && cd chatbot && pip install -r requirements.txt"
   },
   "dependencies": {
     "axios": "^1.10.0",

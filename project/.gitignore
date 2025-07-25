@@ -1,5 +1,25 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Production builds
+/dist/
+/build/
+dist-ssr/
+
+# Development
+.vite/
+*.local
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,15 +27,16 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
@@ -23,31 +44,56 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment files
-.env
-.env.local
-.env.production
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-chatbot_env/
-chatbot/.env
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
 .venv/
-env/
 venv/
 ENV/
-env.bak/
-venv.bak/
+env/
+chatbot_env/
 
 # AI/ML
 *.pkl
 *.joblib
 models/
 data/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*~
 
 # Database
 *.db
