@@ -1,17 +1,35 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { toast } from 'react-toastify';
-import { apiService, setAuthToken } from '../services/api';
-import { User } from '../types';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import { toast } from "react-toastify";
+import { apiService, setAuthToken } from "../services/api";
+import { User } from "../types";
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string, onSuccess?: () => void) => Promise<void>;
-  register: (firstName: string, lastName: string, email: string, password: string, onSuccess?: () => void) => Promise<void>;
+  login: (
+    email: string,
+    password: string,
+    onSuccess?: () => void
+  ) => Promise<void>;
+  register: (
+    firstName: string,
+    lastName: string,
+    email: string,
+    password: string,
+    onSuccess?: () => void
+  ) => Promise<void>;
   logout: () => void;
   setToken: (token: string | null) => void;
-  updatePreferences: (preferences: Partial<User['learningPreferences']>) => Promise<void>;
+  updatePreferences: (
+    preferences: Partial<User["learningPreferences"]>
+  ) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,31 +40,28 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setTokenState] = useState<string | null>(localStorage.getItem('token'));
+  const [token, setTokenState] = useState<string | null>(
+    localStorage.getItem("token")
+  );
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchUser = async () => {
-      console.log('AuthContext: fetchUser called with token:', !!token);
       if (!token) {
-        console.log('AuthContext: No token, setting loading false');
         setIsLoading(false);
         return;
       }
       try {
-        console.log('AuthContext: Setting auth token and fetching user...');
         setAuthToken(token);
         const { user } = await apiService.getUser();
-        console.log('AuthContext: User fetched successfully:', user);
         setUser(user);
       } catch (error: any) {
-        console.error('AuthContext: Failed to fetch user:', error);
+        console.error("AuthContext: Failed to fetch user:", error);
         toast.error(`Failed to fetch user: ${error.message}`);
         setTokenState(null);
-        localStorage.removeItem('token');
+        localStorage.removeItem("token");
         setAuthToken(null);
       } finally {
-        console.log('AuthContext: Setting loading false');
         setIsLoading(false);
       }
     };
@@ -56,80 +71,98 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const setToken = (newToken: string | null) => {
     setTokenState(newToken);
     if (newToken) {
-      localStorage.setItem('token', newToken);
+      localStorage.setItem("token", newToken);
       setAuthToken(newToken);
     } else {
-      localStorage.removeItem('token');
+      localStorage.removeItem("token");
       setAuthToken(null);
     }
   };
 
-  const login = async (email: string, password: string, onSuccess?: () => void) => {
-    console.log('AuthContext: Login started');
+  const login = async (
+    email: string,
+    password: string,
+    onSuccess?: () => void
+  ) => {
     setIsLoading(true);
     try {
       const { token } = await apiService.login({ email, password });
-      console.log('AuthContext: Token received, setting token and fetching user');
       setToken(token);
       const { user } = await apiService.getUser();
-      console.log('AuthContext: User fetched during login:', user);
       setUser(user);
-      toast.success('Logged in successfully!');
+      toast.success("Logged in successfully!");
       if (onSuccess) onSuccess();
     } catch (error: any) {
-      console.error('AuthContext: Login error:', error);
+      console.error("AuthContext: Login error:", error);
       toast.error(`Login failed: ${error.message}`);
       throw error;
     } finally {
-      console.log('AuthContext: Login process complete, setting loading false');
+      console.log("AuthContext: Login process complete, setting loading false");
       setIsLoading(false);
     }
   };
 
-  const register = async (firstName: string, lastName: string, email: string, password: string, onSuccess?: () => void) => {
-    console.log('AuthContext: Register started');
+  const register = async (
+    firstName: string,
+    lastName: string,
+    email: string,
+    password: string,
+    onSuccess?: () => void
+  ) => {
+    console.log("AuthContext: Register started");
     setIsLoading(true);
     try {
-      const { token } = await apiService.register({ firstName, lastName, email, password });
-      console.log('AuthContext: Token received, setting token and fetching user');
+      const { token } = await apiService.register({
+        firstName,
+        lastName,
+        email,
+        password,
+      });
+      console.log(
+        "AuthContext: Token received, setting token and fetching user"
+      );
       setToken(token);
       const { user } = await apiService.getUser();
-      console.log('AuthContext: User fetched during register:', user);
+      console.log("AuthContext: User fetched during register:", user);
       setUser(user);
-      toast.success('Registered successfully!');
+      toast.success("Registered successfully!");
       if (onSuccess) onSuccess();
     } catch (error: any) {
-      console.error('AuthContext: Register error:', error);
+      console.error("AuthContext: Register error:", error);
       toast.error(`Registration failed: ${error.message}`);
       throw error;
     } finally {
-      console.log('AuthContext: Register process complete, setting loading false');
+      console.log(
+        "AuthContext: Register process complete, setting loading false"
+      );
       setIsLoading(false);
     }
   };
 
   const logout = async () => {
-    console.log('AuthContext: Logout started');
+    console.log("AuthContext: Logout started");
     try {
       await apiService.logout();
-      console.log('AuthContext: Logout API call successful');
+      console.log("AuthContext: Logout API call successful");
     } catch (error: any) {
-      console.error('AuthContext: Logout API error:', error);
+      console.error("AuthContext: Logout API error:", error);
       toast.error(`Logout failed: ${error.message}`);
     } finally {
       // Always clear local state regardless of API call result
-      console.log('AuthContext: Clearing user and token');
+      console.log("AuthContext: Clearing user and token");
       setUser(null);
       setToken(null);
-      toast.success('Logged out successfully!');
+      toast.success("Logged out successfully!");
     }
   };
 
-  const updatePreferences = async (preferences: Partial<User['learningPreferences']>) => {
+  const updatePreferences = async (
+    preferences: Partial<User["learningPreferences"]>
+  ) => {
     try {
       const { user } = await apiService.updatePreferences(preferences);
       setUser(user);
-      toast.success('Preferences updated successfully!');
+      toast.success("Preferences updated successfully!");
     } catch (error: any) {
       toast.error(`Failed to update preferences: ${error.message}`);
       throw error;
@@ -137,7 +170,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, setToken, updatePreferences }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        isLoading,
+        login,
+        register,
+        logout,
+        setToken,
+        updatePreferences,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -146,7 +190,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };

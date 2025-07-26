@@ -6,10 +6,23 @@ from typing import List, Optional, Dict, Any
 import os
 from dotenv import load_dotenv
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+import numpy as np
+import requests
+import spacy
 
 # Load environment variables
 load_dotenv()
+
+# Load spaCy model
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    print("Warning: spaCy English model not found. Please install it with: python -m spacy download en_core_web_sm")
+    nlp = None
+
+# Backend URL
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:3001')
 
 # Import our modules
 from nlp_processor import NLPProcessor
@@ -17,6 +30,12 @@ from intent_classifier import IntentClassifier
 from schedule_parser import ScheduleParser
 from backend_client import BackendClient
 from auth_manager import AuthManager
+from prioritization_engine import (
+    PrioritizationEngine, 
+    SubjectFeatures, 
+    SessionFeedback,
+    prioritization_engine
+)
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')))
@@ -140,6 +159,38 @@ class ScheduleRequest(BaseModel):
     subjects: List[str]
     timeframe: str
     preferences: Optional[Dict[str, Any]] = None
+
+# New Pydantic models for prioritization engine
+class SubjectCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    difficulty: int  # 1=Beginner, 2=Intermediate, 3=Advanced
+    priority: int    # 1=Low, 2=Medium, 3=High
+    category: str
+    estimated_hours: float
+    deadline: Optional[str] = None  # ISO format date string
+    tags: Optional[List[str]] = []
+
+class ScheduleGenerationRequest(BaseModel):
+    user_id: str
+    subject_ids: List[str]
+    start_date: str  # ISO format
+    end_date: str    # ISO format
+    daily_hours: int
+    session_duration: int  # minutes
+    preferred_times: List[str]  # ['morning', 'afternoon', 'evening']
+
+class FeedbackSubmissionRequest(BaseModel):
+    subject_id: str
+    completion_rate: float  # 0.0 to 1.0
+    focus_score: float     # 1.0 to 10.0
+    stress_level: float    # 1.0 to 10.0
+    session_duration: float  # actual minutes
+    planned_duration: float  # planned minutes
+
+class OptimalSubjectRequest(BaseModel):
+    user_id: str
+    available_subject_ids: Optional[List[str]] = None
 
 # Dependency to get current user
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -286,8 +337,27 @@ async def generate_response(
     if any(keyword in message.lower() for keyword in ["add subject", "new subject", "create subject"]):
         return await start_add_subject_flow(user_id, user_data)
     
-    if any(keyword in message.lower() for keyword in ["create schedule", "new schedule", "generate schedule"]):
+    if any(keyword in message.lower() for keyword in ["create schedule", "new schedule", "generate schedule", "prioritized schedule", "AI schedule"]):
         return await start_create_schedule_flow(user_id, user_data)
+    
+    # Check for prioritization-related keywords
+    prioritization_keywords = [
+        "recommend", "suggestion", "what should I study", "next subject", 
+        "optimal", "best subject", "prioritize", "most important",
+        "deadline", "urgent", "high priority", "AI recommend"
+    ]
+    
+    if any(keyword in message.lower() for keyword in prioritization_keywords):
+        return await handle_study_recommendation_request(user_id, message, user_data)
+    
+    # Check for feedback-related keywords
+    feedback_keywords = [
+        "completed session", "finished studying", "session feedback",
+        "rate session", "focus score", "stress level", "how was study"
+    ]
+    
+    if any(keyword in message.lower() for keyword in feedback_keywords):
+        return await handle_feedback_collection_request(user_id, message, user_data)
     
     # Handle different intents if no specific flow detected
     if intent == 'create_schedule':
@@ -313,13 +383,15 @@ async def handle_conversation_flow(message: str, user_id: str, conversation_stat
     elif step == ConversationStep.ADD_SUBJECT_DESCRIPTION:
         return await handle_subject_description_step(message, user_id, data, user_data)
     elif step == ConversationStep.ADD_SUBJECT_DIFFICULTY:
-        return await handle_subject_difficulty_step(message, user_id, data, user_data)
+        return await handle_subject_difficulty_step_enhanced(message, user_id, data, user_data)
     elif step == ConversationStep.ADD_SUBJECT_CATEGORY:
         return await handle_subject_category_step(message, user_id, data, user_data)
     elif step == ConversationStep.ADD_SUBJECT_HOURS:
         return await handle_subject_hours_step(message, user_id, data, user_data)
     elif step == ConversationStep.ADD_SUBJECT_PRIORITY:
-        return await handle_subject_priority_step(message, user_id, data, user_data)
+        return await handle_subject_priority_step_enhanced(message, user_id, data, user_data)
+    elif step == ConversationStep.ADD_SUBJECT_DEADLINE:
+        return await handle_subject_deadline_step(message, user_id, data, user_data)
     elif step == ConversationStep.ADD_SUBJECT_TAGS:
         return await handle_subject_tags_step(message, user_id, data, user_data)
     elif step == ConversationStep.ADD_SUBJECT_CONFIRM:
@@ -340,6 +412,14 @@ async def handle_conversation_flow(message: str, user_id: str, conversation_stat
         return await handle_schedule_preferred_times_step(message, user_id, data, user_data)
     elif step == ConversationStep.CREATE_SCHEDULE_CONFIRM:
         return await handle_schedule_confirm_step(message, user_id, data, user_data)
+    
+    # Feedback Collection Flow
+    elif step == "feedback_collection":
+        return await handle_feedback_focus_step(message, user_id, data, user_data)
+    elif step == "feedback_stress":
+        return await handle_feedback_stress_step(message, user_id, data, user_data)
+    elif step == "feedback_completion":
+        return await handle_feedback_completion_step(message, user_id, data, user_data)
     
     # Fallback to main menu
     clear_conversation_state(user_id)
@@ -566,20 +646,26 @@ async def handle_subject_priority_step(message: str, user_id: str, data: dict, u
             suggestions=["high", "medium", "low"]
         )
     
-    update_conversation_state(user_id, ConversationStep.ADD_SUBJECT_TAGS, {**data, "priority": priority})
+    update_conversation_state(user_id, ConversationStep.ADD_SUBJECT_DEADLINE, {**data, "priority": priority})
     
     return ChatResponse(
-        response=f"✅ Priority: **{priority.title()}**\n\n**Step 7 of 7: Tags (Optional)**\n\nAdd some tags to help organize **{data['name']}**. Separate multiple tags with commas.\n\n*Examples: calculus, derivatives, limits OR programming, python, algorithms*\n\nOr type 'skip' to skip this step.",
+        response=f"✅ Priority: **{priority.title()}**\n\n**Step 7 of 8: Deadline (Optional)**\n\nDoes **{data['name']}** have a deadline? Enter a date (YYYY-MM-DD) or type 'none' if no deadline.\n\n*Deadlines help the AI prioritize urgent subjects in your schedule.*\n\n*Examples: 2024-03-15 or none*",
         intent="add_subject_flow",
         confidence=1.0,
         entities={},
         actions=[],
         conversation_id=f"add_subject_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         quick_actions=[
-            {"id": "skip", "label": "⏭️ Skip Tags", "icon": "skip", "message": "skip", "color": "bg-gray-600 hover:bg-gray-700 text-white"},
+            {"id": "none", "label": "📅 No Deadline", "icon": "calendar", "message": "none", "color": "bg-gray-600 hover:bg-gray-700 text-white"},
+            {"id": "week", "label": "📅 Next Week", "icon": "calendar", "message": (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'), "color": "bg-yellow-600 hover:bg-yellow-700 text-white"},
+            {"id": "month", "label": "📅 Next Month", "icon": "calendar", "message": (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'), "color": "bg-blue-600 hover:bg-blue-700 text-white"},
             {"id": "cancel", "label": "❌ Cancel", "icon": "x", "message": "main menu", "color": "bg-red-600 hover:bg-red-700 text-white"}
         ],
-        suggestions=["skip", "programming, python", "calculus, math", "chemistry, lab"]
+        suggestions=[
+            "none",
+            (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'),
+            (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
+        ]
     )
 
 async def handle_subject_tags_step(message: str, user_id: str, data: dict, user_data: dict):
@@ -633,44 +719,58 @@ async def handle_subject_confirm_step(message: str, user_id: str, data: dict, us
         return await start_add_subject_flow(user_id, user_data)
     
     if response_text in ["yes", "confirm", "create", "save"]:
-        # Create the subject using backend API
+        # Create the subject using enhanced prioritization API
         try:
+            # Map difficulty and priority to numbers for prioritization engine
+            difficulty_map = {"beginner": 1, "intermediate": 2, "advanced": 3}
+            priority_map = {"low": 1, "medium": 2, "high": 3}
+            
             subject_data = {
                 "name": data['name'],
                 "description": data.get('description', ''),
-                "difficulty": data['difficulty'],
+                "difficulty": difficulty_map.get(data['difficulty'], 1),
+                "priority": priority_map.get(data['priority'], 2),
                 "category": data['category'],
-                "estimatedHours": data['estimatedHours'],
-                "priority": data['priority'],
-                "tags": data.get('tags', []),
-                "progress": 0,
-                "isCompleted": False
+                "estimated_hours": data['estimatedHours'],
+                "deadline": data.get('deadline'),  # Include deadline
+                "tags": data.get('tags', [])
             }
             
-            # Call backend to create subject
+            # Use enhanced prioritization API
             result = await backend_client.post(
-                f"/subjects",
+                f"/add_subject",  # Use the new prioritization endpoint
                 data=subject_data,
                 headers={"Authorization": f"Bearer {user_data.get('token', '')}"}
             )
             
             clear_conversation_state(user_id)
             
+            # Get deadline display text
+            deadline_text = "No deadline"
+            if data.get('deadline'):
+                try:
+                    deadline_date = datetime.fromisoformat(data['deadline'].replace('Z', '+00:00'))
+                    deadline_text = deadline_date.strftime('%B %d, %Y')
+                except:
+                    deadline_text = "Invalid deadline"
+            
             return ChatResponse(
-                response=f"🎉 **Subject Created Successfully!**\n\n**{data['name']}** has been added to your profile!\n\nWhat would you like to do next?",
-                intent="subject_created",
+                response=f"🎉 **Subject Created with AI Prioritization!**\n\n**{data['name']}** has been added to your profile with enhanced scheduling features!\n\n📊 **Prioritization Details:**\n• **Difficulty:** {data['difficulty'].title()}\n• **Priority:** {data['priority'].title()}\n• **Deadline:** {deadline_text}\n• **AI Scheduling:** Enabled\n\nWhat would you like to do next?",
+                intent="subject_created_enhanced",
                 confidence=1.0,
                 entities={},
                 actions=[{"type": "subject_created", "subject_id": result.get('subject', {}).get('_id')}],
                 conversation_id=f"success_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 quick_actions=[
                     {"id": "add-another", "label": "➕ Add Another Subject", "icon": "plus", "message": "add another subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
-                    {"id": "create-schedule", "label": "📅 Create Schedule", "icon": "calendar", "message": "create schedule", "color": "bg-green-600 hover:bg-green-700 text-white"},
-                    {"id": "main-menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-purple-600 hover:bg-purple-700 text-white"}
+                    {"id": "create-schedule", "label": "📅 Create AI Schedule", "icon": "calendar", "message": "create prioritized schedule", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                    {"id": "get-recommendation", "label": "🎯 Get Study Recommendation", "icon": "target", "message": "what should I study next", "color": "bg-purple-600 hover:bg-purple-700 text-white"},
+                    {"id": "main-menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
                 ],
                 suggestions=[
                     "Add another subject",
-                    "Create a study schedule", 
+                    "Create prioritized schedule", 
+                    "What should I study next?",
                     "Main menu"
                 ]
             )
@@ -1380,6 +1480,960 @@ async def handle_schedule_confirm_step(message: str, user_id: str, data: dict, u
         ],
         suggestions=["yes", "restart", "main menu"]
     )
+
+# ================== PRIORITIZATION ENGINE API ENDPOINTS ==================
+
+@app.post("/add_subject")
+async def add_subject_with_prioritization(
+    request: SubjectCreateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Enhanced subject creation with prioritization features"""
+    try:
+        user_id = current_user.get('user_id')
+        
+        # Validate difficulty and priority values
+        if request.difficulty not in [1, 2, 3]:
+            raise HTTPException(status_code=400, detail="Difficulty must be 1 (Beginner), 2 (Intermediate), or 3 (Advanced)")
+        
+        if request.priority not in [1, 2, 3]:
+            raise HTTPException(status_code=400, detail="Priority must be 1 (Low), 2 (Medium), or 3 (High)")
+        
+        if request.estimated_hours <= 0:
+            raise HTTPException(status_code=400, detail="Estimated hours must be positive")
+        
+        # Parse deadline if provided
+        deadline_date = None
+        if request.deadline:
+            try:
+                deadline_date = datetime.fromisoformat(request.deadline.replace('Z', '+00:00'))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid deadline format. Use ISO format (YYYY-MM-DDTHH:MM:SS)")
+        
+        # Create subject data for backend
+        subject_data = {
+            "name": request.name,
+            "description": request.description,
+            "difficulty": ["beginner", "intermediate", "advanced"][request.difficulty - 1],
+            "priority": ["low", "medium", "high"][request.priority - 1],
+            "category": request.category,
+            "estimatedHours": request.estimated_hours,
+            "tags": request.tags or [],
+            "deadline": request.deadline,
+            "progress": 0,
+            "isCompleted": False
+        }
+        
+        # Create subject in backend
+        result = await backend_client.post(
+            "/subjects",
+            data=subject_data,
+            headers={"Authorization": f"Bearer {current_user.get('token', '')}"}
+        )
+        
+        if not result.get('success', False):
+            raise HTTPException(status_code=400, detail=result.get('message', 'Failed to create subject'))
+        
+        subject = result.get('subject', {})
+        
+        # Add subject to prioritization engine bandit
+        prioritization_engine.bandit.add_arm(subject.get('_id'))
+        
+        return {
+            "success": True,
+            "message": "Subject created successfully with prioritization features",
+            "subject": subject,
+            "prioritization_enabled": True
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in add_subject_with_prioritization: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.post("/generate_schedule")
+async def generate_prioritized_schedule(
+    request: ScheduleGenerationRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Generate a prioritized schedule using AI models"""
+    try:
+        user_id = current_user.get('user_id')
+        
+        if request.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Cannot generate schedule for different user")
+        
+        # Fetch user's subjects
+        subjects_response = await backend_client.get(
+            "/subjects",
+            headers={"Authorization": f"Bearer {current_user.get('token', '')}"}
+        )
+        
+        all_subjects = subjects_response.get('subjects', [])
+        
+        # Filter to requested subjects
+        if request.subject_ids:
+            filtered_subjects = [s for s in all_subjects if s.get('_id') in request.subject_ids]
+        else:
+            filtered_subjects = all_subjects
+        
+        if not filtered_subjects:
+            raise HTTPException(status_code=400, detail="No valid subjects found for scheduling")
+        
+        # Convert to SubjectFeatures for prioritization engine
+        subject_features = []
+        for subject in filtered_subjects:
+            # Calculate days until deadline
+            days_until_deadline = 30  # Default
+            if subject.get('deadline'):
+                try:
+                    deadline = datetime.fromisoformat(subject['deadline'].replace('Z', '+00:00'))
+                    days_until_deadline = max(1, (deadline - datetime.now()).days)
+                except:
+                    pass
+            
+            # Map difficulty and priority to numbers
+            difficulty_map = {"beginner": 1, "intermediate": 2, "advanced": 3}
+            priority_map = {"low": 1, "medium": 2, "high": 3}
+            
+            features = SubjectFeatures(
+                subject_id=subject['_id'],
+                name=subject['name'],
+                difficulty=difficulty_map.get(subject.get('difficulty', 'beginner'), 1),
+                priority=priority_map.get(subject.get('priority', 'medium'), 2),
+                estimated_hours=subject.get('estimatedHours', 10),
+                completion_rate=subject.get('progress', 0) / 100.0,
+                focus_score=7.0,  # Default - will be updated from feedback
+                days_until_deadline=days_until_deadline,
+                progress_velocity=0.1,  # Default - will be calculated from history
+                stress_level=5.0,  # Default - will be updated from feedback
+                last_session_success=True  # Default optimistic
+            )
+            subject_features.append(features)
+        
+        # Generate prioritized recommendations
+        recommendations = prioritization_engine.get_scheduling_recommendations(
+            subject_features, 
+            time_slots=min(10, len(subject_features))
+        )
+        
+        # Create schedule sessions based on recommendations
+        schedule_sessions = []
+        start_date = datetime.fromisoformat(request.start_date.replace('Z', '+00:00'))
+        session_duration_hours = request.session_duration / 60.0
+        sessions_per_day = max(1, int(request.daily_hours / session_duration_hours))
+        
+        current_date = start_date
+        end_date = datetime.fromisoformat(request.end_date.replace('Z', '+00:00'))
+        session_counter = 0
+        
+        while current_date <= end_date and session_counter < len(recommendations):
+            for time_slot in request.preferred_times:
+                if session_counter >= len(recommendations):
+                    break
+                
+                rec = recommendations[session_counter]
+                
+                # Map time slots to hours
+                time_mapping = {
+                    'morning': 9,
+                    'afternoon': 14,
+                    'evening': 19
+                }
+                
+                start_hour = time_mapping.get(time_slot, 14)
+                session_start = current_date.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+                session_end = session_start + timedelta(minutes=request.session_duration)
+                
+                session = {
+                    "subjectId": rec['subject_id'],
+                    "startTime": session_start.isoformat(),
+                    "endTime": session_end.isoformat(),
+                    "duration": request.session_duration,
+                    "priority": rec['priority_score'],
+                    "sessionType": "study",
+                    "status": "scheduled",
+                    "prioritizationReasoning": rec['reasoning'],
+                    "methodUsed": rec['method_used']
+                }
+                
+                schedule_sessions.append(session)
+                session_counter += 1
+            
+            current_date += timedelta(days=1)
+        
+        # Create schedule in backend
+        schedule_data = {
+            "name": f"AI Prioritized Schedule - {start_date.strftime('%Y-%m-%d')}",
+            "startDate": request.start_date,
+            "endDate": request.end_date,
+            "sessions": schedule_sessions,
+            "scheduleType": "real",
+            "preferences": {
+                "dailyStudyHours": request.daily_hours,
+                "preferredTimeSlots": request.preferred_times,
+                "sessionDuration": request.session_duration,
+                "breakDuration": 15
+            },
+            "metadata": {
+                "generatedBy": "prioritization_engine",
+                "modelUsed": "hybrid_bandit_selection",
+                "totalRecommendations": len(recommendations)
+            }
+        }
+        
+        result = await backend_client.post(
+            "/schedules",
+            data=schedule_data,
+            headers={"Authorization": f"Bearer {current_user.get('token', '')}"}
+        )
+        
+        return {
+            "success": True,
+            "message": "Prioritized schedule generated successfully",
+            "schedule": result.get('schedule', {}),
+            "recommendations": recommendations,
+            "prioritization_stats": {
+                "subjects_analyzed": len(subject_features),
+                "sessions_created": len(schedule_sessions),
+                "method_used": "hybrid_bandit_selection"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in generate_prioritized_schedule: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate schedule: {str(e)}")
+
+@app.post("/submit_feedback")
+async def submit_session_feedback(
+    request: FeedbackSubmissionRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Submit feedback to update prioritization models"""
+    try:
+        # Validate feedback values
+        if not (0.0 <= request.completion_rate <= 1.0):
+            raise HTTPException(status_code=400, detail="Completion rate must be between 0.0 and 1.0")
+        
+        if not (1.0 <= request.focus_score <= 10.0):
+            raise HTTPException(status_code=400, detail="Focus score must be between 1.0 and 10.0")
+        
+        if not (1.0 <= request.stress_level <= 10.0):
+            raise HTTPException(status_code=400, detail="Stress level must be between 1.0 and 10.0")
+        
+        # Create feedback object
+        feedback = SessionFeedback(
+            subject_id=request.subject_id,
+            completion_rate=request.completion_rate,
+            focus_score=request.focus_score,
+            stress_level=request.stress_level,
+            session_duration=request.session_duration,
+            actual_vs_planned_ratio=request.session_duration / max(request.planned_duration, 1),
+            timestamp=datetime.now()
+        )
+        
+        # Update prioritization models
+        prioritization_engine.update_models(feedback)
+        
+        # Store feedback in MongoDB for future analysis
+        feedback_data = {
+            "userId": current_user.get('user_id'),
+            "subjectId": request.subject_id,
+            "completionRate": request.completion_rate,
+            "focusScore": request.focus_score,
+            "stressLevel": request.stress_level,
+            "sessionDuration": request.session_duration,
+            "plannedDuration": request.planned_duration,
+            "actualVsPlannedRatio": feedback.actual_vs_planned_ratio,
+            "timestamp": feedback.timestamp.isoformat()
+        }
+        
+        # Store in backend (assuming feedback endpoint exists)
+        try:
+            await backend_client.post(
+                "/feedback",
+                data=feedback_data,
+                headers={"Authorization": f"Bearer {current_user.get('token', '')}"}
+            )
+        except Exception as e:
+            logger.warning(f"Failed to store feedback in backend: {e}")
+        
+        # Get updated bandit statistics
+        bandit_stats = prioritization_engine.bandit.get_arm_statistics(request.subject_id)
+        
+        return {
+            "success": True,
+            "message": "Feedback submitted successfully",
+            "updated_statistics": bandit_stats,
+            "feedback_processed": {
+                "subject_id": request.subject_id,
+                "reward_calculated": prioritization_engine.bandit._calculate_reward(feedback),
+                "timestamp": feedback.timestamp.isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in submit_session_feedback: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to process feedback: {str(e)}")
+
+@app.post("/get_optimal_subject")
+async def get_optimal_subject_recommendation(
+    request: OptimalSubjectRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get the next optimal subject recommendation"""
+    try:
+        user_id = current_user.get('user_id')
+        
+        if request.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Cannot get recommendations for different user")
+        
+        # Fetch user's subjects
+        subjects_response = await backend_client.get(
+            "/subjects",
+            headers={"Authorization": f"Bearer {current_user.get('token', '')}"}
+        )
+        
+        all_subjects = subjects_response.get('subjects', [])
+        
+        # Filter to available subjects if specified
+        if request.available_subject_ids:
+            filtered_subjects = [s for s in all_subjects if s.get('_id') in request.available_subject_ids]
+        else:
+            # Filter out completed subjects
+            filtered_subjects = [s for s in all_subjects if not s.get('isCompleted', False)]
+        
+        if not filtered_subjects:
+            return {
+                "success": False,
+                "message": "No available subjects for recommendation",
+                "recommendation": None
+            }
+        
+        # Convert to SubjectFeatures
+        subject_features = []
+        for subject in filtered_subjects:
+            days_until_deadline = 30
+            if subject.get('deadline'):
+                try:
+                    deadline = datetime.fromisoformat(subject['deadline'].replace('Z', '+00:00'))
+                    days_until_deadline = max(1, (deadline - datetime.now()).days)
+                except:
+                    pass
+            
+            difficulty_map = {"beginner": 1, "intermediate": 2, "advanced": 3}
+            priority_map = {"low": 1, "medium": 2, "high": 3}
+            
+            features = SubjectFeatures(
+                subject_id=subject['_id'],
+                name=subject['name'],
+                difficulty=difficulty_map.get(subject.get('difficulty', 'beginner'), 1),
+                priority=priority_map.get(subject.get('priority', 'medium'), 2),
+                estimated_hours=subject.get('estimatedHours', 10),
+                completion_rate=subject.get('progress', 0) / 100.0,
+                focus_score=7.0,
+                days_until_deadline=days_until_deadline,
+                progress_velocity=0.1,
+                stress_level=5.0,
+                last_session_success=True
+            )
+            subject_features.append(features)
+        
+        # Get optimal subject
+        subject_id, score, method = prioritization_engine.select_optimal_subject(subject_features)
+        
+        # Find the recommended subject details
+        recommended_subject = next(s for s in filtered_subjects if s.get('_id') == subject_id)
+        
+        # Get bandit statistics for the recommended subject
+        bandit_stats = prioritization_engine.bandit.get_arm_statistics(subject_id)
+        
+        return {
+            "success": True,
+            "message": "Optimal subject recommendation generated",
+            "recommendation": {
+                "subject_id": subject_id,
+                "subject_name": recommended_subject['name'],
+                "priority_score": score,
+                "method_used": method,
+                "reasoning": prioritization_engine._generate_reasoning(
+                    next(sf for sf in subject_features if sf.subject_id == subject_id), 
+                    score
+                ),
+                "bandit_statistics": bandit_stats,
+                "subject_details": {
+                    "difficulty": recommended_subject.get('difficulty'),
+                    "priority": recommended_subject.get('priority'),
+                    "progress": recommended_subject.get('progress', 0),
+                    "estimated_hours": recommended_subject.get('estimatedHours')
+                }
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_optimal_subject_recommendation: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get recommendation: {str(e)}")
+
+# ================== ENHANCED CONVERSATION FLOWS ==================
+
+async def handle_subject_difficulty_step_enhanced(message: str, user_id: str, data: dict, user_data: dict):
+    """Enhanced difficulty step with prioritization context"""
+    if message.lower().strip() in ["cancel", "main menu", "stop"]:
+        clear_conversation_state(user_id)
+        return show_main_menu()
+    
+    difficulty_map = {"1": "beginner", "2": "intermediate", "3": "advanced"}
+    text_map = {"beginner": "beginner", "intermediate": "intermediate", "advanced": "advanced"}
+    
+    # Try to parse the difficulty
+    difficulty_text = message.lower().strip()
+    difficulty = None
+    
+    if difficulty_text in difficulty_map:
+        difficulty = difficulty_map[difficulty_text]
+    elif difficulty_text in text_map:
+        difficulty = difficulty_text
+    
+    if not difficulty:
+        return ChatResponse(
+            response="⚠️ Please select a valid difficulty level (1-3 or beginner/intermediate/advanced):",
+            intent="add_subject_flow",
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=f"add_subject_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[
+                {"id": "1", "label": "1️⃣ Beginner", "icon": "play", "message": "1", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                {"id": "2", "label": "2️⃣ Intermediate", "icon": "zap", "message": "2", "color": "bg-yellow-600 hover:bg-yellow-700 text-white"},
+                {"id": "3", "label": "3️⃣ Advanced", "icon": "star", "message": "3", "color": "bg-red-600 hover:bg-red-700 text-white"}
+            ],
+            suggestions=["1", "2", "3", "beginner"]
+        )
+    
+    # Store difficulty in data
+    update_conversation_state(user_id, ConversationStep.ADD_SUBJECT_CATEGORY, {**data, "difficulty": difficulty})
+    
+    return ChatResponse(
+        response=f"✅ Difficulty set to: **{difficulty.title()}**\n\n**Step 4 of 8: Subject Category**\n\nWhat category does this subject belong to?\n\n*This helps with prioritization and scheduling optimization.*",
+        intent="add_subject_flow",
+        confidence=1.0,
+        entities={},
+        actions=[],
+        conversation_id=f"add_subject_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        quick_actions=[
+            {"id": "academic", "label": "🎓 Academic", "icon": "book", "message": "Academic", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+            {"id": "professional", "label": "💼 Professional", "icon": "briefcase", "message": "Professional", "color": "bg-purple-600 hover:bg-purple-700 text-white"},
+            {"id": "personal", "label": "🌟 Personal", "icon": "user", "message": "Personal", "color": "bg-green-600 hover:bg-green-700 text-white"},
+            {"id": "certification", "label": "🏆 Certification", "icon": "award", "message": "Certification", "color": "bg-orange-600 hover:bg-orange-700 text-white"}
+        ],
+        suggestions=["Academic", "Professional", "Personal", "Certification"]
+    )
+
+async def handle_subject_priority_step_enhanced(message: str, user_id: str, data: dict, user_data: dict):
+    """Enhanced priority step with AI prioritization explanation"""
+    if message.lower().strip() in ["cancel", "main menu", "stop"]:
+        clear_conversation_state(user_id)
+        return show_main_menu()
+    
+    priority_map = {"1": "low", "2": "medium", "3": "high"}
+    text_map = {"low": "low", "medium": "medium", "high": "high"}
+    
+    priority_text = message.lower().strip()
+    priority = None
+    
+    if priority_text in priority_map:
+        priority = priority_map[priority_text]
+    elif priority_text in text_map:
+        priority = priority_text
+    
+    if not priority:
+        return ChatResponse(
+            response="⚠️ Please select a valid priority level (1-3 or low/medium/high):\n\n**Priority affects AI scheduling:**\n• **High** - Scheduled first, more frequent sessions\n• **Medium** - Balanced scheduling approach\n• **Low** - Scheduled when time allows",
+            intent="add_subject_flow",
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=f"add_subject_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[
+                {"id": "1", "label": "1️⃣ Low Priority", "icon": "circle", "message": "1", "color": "bg-gray-600 hover:bg-gray-700 text-white"},
+                {"id": "2", "label": "2️⃣ Medium Priority", "icon": "target", "message": "2", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                {"id": "3", "label": "3️⃣ High Priority", "icon": "zap", "message": "3", "color": "bg-red-600 hover:bg-red-700 text-white"}
+            ],
+            suggestions=["1", "2", "3", "medium"]
+        )
+    
+    update_conversation_state(user_id, ConversationStep.ADD_SUBJECT_DEADLINE, {**data, "priority": priority})
+    
+    return ChatResponse(
+        response=f"✅ Priority set to: **{priority.title()}**\n\n**Step 7 of 8: Deadline (Optional)**\n\nDoes this subject have a deadline? Enter a date (YYYY-MM-DD) or type 'none' if no deadline.\n\n*Deadlines help the AI prioritize urgent subjects in your schedule.*\n\n*Example: 2024-03-15 or none*",
+        intent="add_subject_flow",
+        confidence=1.0,
+        entities={},
+        actions=[],
+        conversation_id=f"add_subject_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        quick_actions=[
+            {"id": "none", "label": "📅 No Deadline", "icon": "calendar", "message": "none", "color": "bg-gray-600 hover:bg-gray-700 text-white"},
+            {"id": "week", "label": "📅 Next Week", "icon": "calendar", "message": (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'), "color": "bg-yellow-600 hover:bg-yellow-700 text-white"},
+            {"id": "month", "label": "📅 Next Month", "icon": "calendar", "message": (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'), "color": "bg-blue-600 hover:bg-blue-700 text-white"}
+        ],
+        suggestions=[
+            "none",
+            (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d'),
+            (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
+        ]
+    )
+
+async def handle_subject_deadline_step(message: str, user_id: str, data: dict, user_data: dict):
+    """Handle deadline input step"""
+    if message.lower().strip() in ["cancel", "main menu", "stop"]:
+        clear_conversation_state(user_id)
+        return show_main_menu()
+    
+    deadline = None
+    deadline_text = "No deadline"
+    
+    if message.lower().strip() != "none":
+        try:
+            # Try to parse date
+            deadline_date = datetime.strptime(message.strip(), '%Y-%m-%d')
+            if deadline_date < datetime.now():
+                return ChatResponse(
+                    response="⚠️ Deadline cannot be in the past. Please enter a future date (YYYY-MM-DD) or 'none':",
+                    intent="add_subject_flow",
+                    confidence=1.0,
+                    entities={},
+                    actions=[],
+                    conversation_id=f"add_subject_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    quick_actions=[],
+                    suggestions=["none", (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')]
+                )
+            deadline = deadline_date.isoformat()
+            deadline_text = deadline_date.strftime('%B %d, %Y')
+        except ValueError:
+            return ChatResponse(
+                response="⚠️ Invalid date format. Please use YYYY-MM-DD format or type 'none':\n\n*Example: 2024-03-15*",
+                intent="add_subject_flow",
+                confidence=1.0,
+                entities={},
+                actions=[],
+                conversation_id=f"add_subject_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                quick_actions=[
+                    {"id": "none", "label": "📅 No Deadline", "icon": "calendar", "message": "none", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+                ],
+                suggestions=["none"]
+            )
+    
+    update_conversation_state(user_id, ConversationStep.ADD_SUBJECT_TAGS, {**data, "deadline": deadline})
+    
+    return ChatResponse(
+        response=f"✅ Deadline: **{deadline_text}**\n\n**Step 8 of 8: Tags (Optional)**\n\nAdd some tags to help organize **{data['name']}**. Separate multiple tags with commas.\n\n*Examples: calculus, derivatives, limits OR programming, python, algorithms*\n\nOr type 'skip' to skip this step.",
+        intent="add_subject_flow",
+        confidence=1.0,
+        entities={},
+        actions=[],
+        conversation_id=f"add_subject_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        quick_actions=[
+            {"id": "none", "label": "🏷️ No Tags", "icon": "tag", "message": "none", "color": "bg-gray-600 hover:bg-gray-700 text-white"},
+            {"id": "exam", "label": "🏷️ Exam", "icon": "tag", "message": "exam", "color": "bg-red-600 hover:bg-red-700 text-white"},
+            {"id": "project", "label": "🏷️ Project", "icon": "tag", "message": "project", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+            {"id": "important", "label": "🏷️ Important", "icon": "tag", "message": "important", "color": "bg-orange-600 hover:bg-orange-700 text-white"}
+        ],
+        suggestions=["none", "exam", "project", "important", "midterm"]
+    )
+
+async def handle_study_recommendation_request(user_id: str, message: str, user_data: dict):
+    """Handle AI study recommendation requests"""
+    try:
+        # Extract context from the message
+        doc = nlp(message.lower())
+        urgency_keywords = ["urgent", "deadline", "soon", "tomorrow", "exam", "test"]
+        difficulty_keywords = ["hard", "difficult", "easy", "challenging", "complex"]
+        
+        urgency_mentioned = any(keyword in message.lower() for keyword in urgency_keywords)
+        difficulty_mentioned = any(keyword in message.lower() for keyword in difficulty_keywords)
+        
+        # Prepare request for AI recommendation
+        recommendation_request = {
+            "user_preferences": {
+                "prioritize_deadlines": urgency_mentioned,
+                "consider_difficulty": difficulty_mentioned,
+                "context": message.lower()
+            }
+        }
+        
+        # Call the optimal subject API
+        response = requests.post(
+            f"{BACKEND_URL}/api/ai/get_optimal_subject",
+            json=recommendation_request,
+            headers={"Content-Type": "application/json"}
+        )
+        
+        if response.status_code == 200:
+            recommendation = response.json()
+            subject = recommendation.get("subject", {})
+            reasoning = recommendation.get("reasoning", "Based on your study patterns and priorities")
+            confidence = recommendation.get("confidence_score", 0.0)
+            
+            if subject:
+                response_text = f"🤖 **AI Study Recommendation**\n\n"
+                response_text += f"📚 **{subject.get('name', 'Unknown Subject')}**\n"
+                response_text += f"📊 **Confidence**: {confidence:.1%}\n\n"
+                response_text += f"💡 **Why this subject?**\n{reasoning}\n\n"
+                
+                if subject.get('deadline'):
+                    response_text += f"⏰ **Deadline**: {subject['deadline']}\n"
+                if subject.get('difficulty'):
+                    response_text += f"📈 **Difficulty**: {subject['difficulty'].title()}\n"
+                if subject.get('estimated_hours'):
+                    response_text += f"🕒 **Estimated Time**: {subject['estimated_hours']} hours\n\n"
+                
+                response_text += "Would you like to start a study session for this subject?"
+                
+                return ChatResponse(
+                    response=response_text,
+                    intent="study_recommendation",
+                    confidence=confidence,
+                    entities={"recommended_subject": subject},
+                    actions=["start_session", "get_different_recommendation"],
+                    conversation_id=f"recommendation_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    quick_actions=[
+                        {"id": "start_session", "label": "▶️ Start Session", "icon": "play", "message": f"start session for {subject.get('name', 'this subject')}", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                        {"id": "different_rec", "label": "🔄 Different Suggestion", "icon": "refresh", "message": "suggest different subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                        {"id": "main_menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+                    ]
+                )
+            else:
+                return ChatResponse(
+                    response="🤖 I don't have enough information about your subjects to make a recommendation yet.\n\nWould you like to add some subjects first?",
+                    intent="no_subjects_available",
+                    confidence=1.0,
+                    entities={},
+                    actions=["add_subject"],
+                    conversation_id=f"recommendation_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    quick_actions=[
+                        {"id": "add_subject", "label": "➕ Add Subject", "icon": "plus", "message": "add subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                        {"id": "main_menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+                    ]
+                )
+        else:
+            return ChatResponse(
+                response="⚠️ I'm having trouble accessing the recommendation system right now. Please try again later.",
+                intent="recommendation_error",
+                confidence=1.0,
+                entities={},
+                actions=["retry", "main_menu"],
+                conversation_id=f"recommendation_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                quick_actions=[
+                    {"id": "retry", "label": "🔄 Try Again", "icon": "refresh", "message": "recommend subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                    {"id": "main_menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+                ]
+            )
+            
+    except Exception as e:
+        print(f"Error in study recommendation: {e}")
+        return ChatResponse(
+            response="⚠️ I encountered an error while processing your recommendation request. Please try again.",
+            intent="recommendation_error",
+            confidence=1.0,
+            entities={},
+            actions=["retry", "main_menu"],
+            conversation_id=f"recommendation_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[
+                {"id": "retry", "label": "🔄 Try Again", "icon": "refresh", "message": "recommend subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                {"id": "main_menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+            ]
+        )
+
+async def handle_feedback_collection_request(user_id: str, message: str, user_data: dict):
+    """Handle feedback collection for completed study sessions"""
+    try:
+        # Extract session details from the message
+        doc = nlp(message.lower())
+        
+        # Look for subject name mentions
+        subject_name = None
+        for token in doc:
+            if token.pos_ == "PROPN" or token.like_title:
+                subject_name = token.text
+                break
+        
+        # Look for focus and stress indicators in the message
+        focus_keywords = {
+            "high": ["focused", "concentrated", "good focus", "very focused", "excellent focus"],
+            "medium": ["okay focus", "average focus", "decent focus", "some focus"],
+            "low": ["distracted", "poor focus", "couldn't focus", "lost focus", "no focus"]
+        }
+        
+        stress_keywords = {
+            "high": ["stressed", "overwhelmed", "anxious", "difficult", "hard time"],
+            "medium": ["okay", "manageable", "moderate", "some stress"],
+            "low": ["easy", "relaxed", "comfortable", "stress-free", "calm"]
+        }
+        
+        focus_score = 3  # Default medium
+        stress_level = 3  # Default medium
+        
+        for level, keywords in focus_keywords.items():
+            if any(keyword in message.lower() for keyword in keywords):
+                focus_score = {"high": 5, "medium": 3, "low": 1}[level]
+                break
+        
+        for level, keywords in stress_keywords.items():
+            if any(keyword in message.lower() for keyword in keywords):
+                stress_level = {"high": 5, "medium": 3, "low": 1}[level]
+                break
+        
+        # Start feedback collection flow
+        update_conversation_state(user_id, "feedback_collection", {
+            "subject_name": subject_name,
+            "focus_score": focus_score,
+            "stress_level": stress_level,
+            "original_message": message
+        })
+        
+        response_text = "📝 **Session Feedback Collection**\n\n"
+        if subject_name:
+            response_text += f"Subject: **{subject_name}**\n\n"
+        
+        response_text += "Please rate your study session:\n\n"
+        response_text += "**Focus Level** (1-5 scale):\n"
+        response_text += "1 = Very distracted, 5 = Highly focused"
+        
+        return ChatResponse(
+            response=response_text,
+            intent="feedback_collection",
+            confidence=1.0,
+            entities={"subject_name": subject_name},
+            actions=["collect_focus_rating"],
+            conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[
+                {"id": "focus_1", "label": "1 - Very Distracted", "icon": "frown", "message": "1", "color": "bg-red-600 hover:bg-red-700 text-white"},
+                {"id": "focus_2", "label": "2 - Somewhat Distracted", "icon": "meh", "message": "2", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
+                {"id": "focus_3", "label": "3 - Neutral", "icon": "smile", "message": "3", "color": "bg-yellow-600 hover:bg-yellow-700 text-white"},
+                {"id": "focus_4", "label": "4 - Good Focus", "icon": "grin", "message": "4", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                {"id": "focus_5", "label": "5 - Excellent Focus", "icon": "star", "message": "5", "color": "bg-blue-600 hover:bg-blue-700 text-white"}
+            ]
+        )
+        
+    except Exception as e:
+        print(f"Error in feedback collection: {e}")
+        return ChatResponse(
+            response="⚠️ I encountered an error while setting up feedback collection. Please try again.",
+            intent="feedback_error",
+            confidence=1.0,
+            entities={},
+            actions=["retry", "main_menu"],
+            conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[
+                {"id": "retry", "label": "🔄 Try Again", "icon": "refresh", "message": "session feedback", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                {"id": "main_menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+            ]
+        )
+
+async def handle_feedback_focus_step(message: str, user_id: str, data: dict, user_data: dict):
+    """Handle focus score input for feedback"""
+    if message.lower().strip() in ["cancel", "main menu", "stop"]:
+        clear_conversation_state(user_id)
+        return show_main_menu()
+    
+    try:
+        focus_score = int(message.strip())
+        if focus_score < 1 or focus_score > 5:
+            raise ValueError("Focus score must be between 1 and 5")
+    except (ValueError, TypeError):
+        return ChatResponse(
+            response="⚠️ Please enter a valid focus score (1-5):",
+            intent="feedback_collection",
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[
+                {"id": "focus_1", "label": "1", "icon": "frown", "message": "1", "color": "bg-red-600 hover:bg-red-700 text-white"},
+                {"id": "focus_2", "label": "2", "icon": "meh", "message": "2", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
+                {"id": "focus_3", "label": "3", "icon": "smile", "message": "3", "color": "bg-yellow-600 hover:bg-yellow-700 text-white"},
+                {"id": "focus_4", "label": "4", "icon": "grin", "message": "4", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                {"id": "focus_5", "label": "5", "icon": "star", "message": "5", "color": "bg-blue-600 hover:bg-blue-700 text-white"}
+            ]
+        )
+    
+    update_conversation_state(user_id, "feedback_stress", {**data, "focus_score": focus_score})
+    
+    return ChatResponse(
+        response=f"✅ Focus Score: **{focus_score}/5**\n\n**Stress Level** (1-5 scale):\n1 = Very stressed/overwhelmed, 5 = Very relaxed/comfortable",
+        intent="feedback_collection",
+        confidence=1.0,
+        entities={},
+        actions=[],
+        conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        quick_actions=[
+            {"id": "stress_1", "label": "1 - Very Stressed", "icon": "frown", "message": "1", "color": "bg-red-600 hover:bg-red-700 text-white"},
+            {"id": "stress_2", "label": "2 - Somewhat Stressed", "icon": "meh", "message": "2", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
+            {"id": "stress_3", "label": "3 - Neutral", "icon": "smile", "message": "3", "color": "bg-yellow-600 hover:bg-yellow-700 text-white"},
+            {"id": "stress_4", "label": "4 - Comfortable", "icon": "grin", "message": "4", "color": "bg-green-600 hover:bg-green-700 text-white"},
+            {"id": "stress_5", "label": "5 - Very Relaxed", "icon": "star", "message": "5", "color": "bg-blue-600 hover:bg-blue-700 text-white"}
+        ]
+    )
+
+async def handle_feedback_stress_step(message: str, user_id: str, data: dict, user_data: dict):
+    """Handle stress level input for feedback"""
+    if message.lower().strip() in ["cancel", "main menu", "stop"]:
+        clear_conversation_state(user_id)
+        return show_main_menu()
+    
+    try:
+        stress_level = int(message.strip())
+        if stress_level < 1 or stress_level > 5:
+            raise ValueError("Stress level must be between 1 and 5")
+    except (ValueError, TypeError):
+        return ChatResponse(
+            response="⚠️ Please enter a valid stress level (1-5):",
+            intent="feedback_collection",
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[
+                {"id": "stress_1", "label": "1", "icon": "frown", "message": "1", "color": "bg-red-600 hover:bg-red-700 text-white"},
+                {"id": "stress_2", "label": "2", "icon": "meh", "message": "2", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
+                {"id": "stress_3", "label": "3", "icon": "smile", "message": "3", "color": "bg-yellow-600 hover:bg-yellow-700 text-white"},
+                {"id": "stress_4", "label": "4", "icon": "grin", "message": "4", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                {"id": "stress_5", "label": "5", "icon": "star", "message": "5", "color": "bg-blue-600 hover:bg-blue-700 text-white"}
+            ]
+        )
+    
+    update_conversation_state(user_id, "feedback_completion", {**data, "stress_level": stress_level})
+    
+    return ChatResponse(
+        response=f"✅ Stress Level: **{stress_level}/5**\n\n**How much of the session did you complete?**\nPlease enter a percentage (0-100):",
+        intent="feedback_collection",
+        confidence=1.0,
+        entities={},
+        actions=[],
+        conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        quick_actions=[
+            {"id": "complete_25", "label": "25%", "icon": "percent", "message": "25", "color": "bg-red-600 hover:bg-red-700 text-white"},
+            {"id": "complete_50", "label": "50%", "icon": "percent", "message": "50", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
+            {"id": "complete_75", "label": "75%", "icon": "percent", "message": "75", "color": "bg-yellow-600 hover:bg-yellow-700 text-white"},
+            {"id": "complete_100", "label": "100%", "icon": "percent", "message": "100", "color": "bg-green-600 hover:bg-green-700 text-white"}
+        ]
+    )
+
+async def handle_feedback_completion_step(message: str, user_id: str, data: dict, user_data: dict):
+    """Handle completion percentage and submit feedback"""
+    if message.lower().strip() in ["cancel", "main menu", "stop"]:
+        clear_conversation_state(user_id)
+        return show_main_menu()
+    
+    try:
+        completion_percentage = float(message.strip())
+        if completion_percentage < 0 or completion_percentage > 100:
+            raise ValueError("Completion percentage must be between 0 and 100")
+    except (ValueError, TypeError):
+        return ChatResponse(
+            response="⚠️ Please enter a valid completion percentage (0-100):",
+            intent="feedback_collection",
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[
+                {"id": "complete_25", "label": "25%", "icon": "percent", "message": "25", "color": "bg-red-600 hover:bg-red-700 text-white"},
+                {"id": "complete_50", "label": "50%", "icon": "percent", "message": "50", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
+                {"id": "complete_75", "label": "75%", "icon": "percent", "message": "75", "color": "bg-yellow-600 hover:bg-yellow-700 text-white"},
+                {"id": "complete_100", "label": "100%", "icon": "percent", "message": "100", "color": "bg-green-600 hover:bg-green-700 text-white"}
+            ]
+        )
+    
+    # Submit feedback to the prioritization system
+    try:
+        feedback_data = {
+            "subject_name": data.get("subject_name"),
+            "focus_score": data.get("focus_score"),
+            "stress_level": data.get("stress_level"),
+            "completion_percentage": completion_percentage,
+            "session_date": datetime.now().isoformat(),
+            "user_id": user_id
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/api/ai/submit_feedback",
+            json=feedback_data,
+            headers={"Content-Type": "application/json"}
+        )
+        
+        clear_conversation_state(user_id)
+        
+        if response.status_code == 200:
+            return ChatResponse(
+                response=f"✅ **Feedback Submitted Successfully!**\n\n📊 **Session Summary:**\n• Focus Score: **{data.get('focus_score')}/5**\n• Stress Level: **{data.get('stress_level')}/5**\n• Completion: **{completion_percentage}%**\n\n🤖 This feedback helps improve your future study recommendations!",
+                intent="feedback_submitted",
+                confidence=1.0,
+                entities={},
+                actions=["main_menu", "get_recommendation"],
+                conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                quick_actions=[
+                    {"id": "recommendation", "label": "🤖 Get Study Recommendation", "icon": "brain", "message": "recommend study subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                    {"id": "main_menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+                ]
+            )
+        else:
+            return ChatResponse(
+                response=f"⚠️ Feedback collected but couldn't sync with AI system. Your data:\n• Focus: {data.get('focus_score')}/5\n• Stress: {data.get('stress_level')}/5\n• Completion: {completion_percentage}%",
+                intent="feedback_partial",
+                confidence=1.0,
+                entities={},
+                actions=["main_menu"],
+                conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                quick_actions=[
+                    {"id": "main_menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+                ]
+            )
+            
+    except Exception as e:
+        print(f"Error submitting feedback: {e}")
+        clear_conversation_state(user_id)
+        return ChatResponse(
+            response="⚠️ Error submitting feedback. Please try again later.",
+            intent="feedback_error",
+            confidence=1.0,
+            entities={},
+            actions=["main_menu"],
+            conversation_id=f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[
+                {"id": "main_menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+            ]
+        )
+
+# Update the conversation step enum to include deadline step
+class ConversationStep:
+    # Subject Addition Flow
+    ADD_SUBJECT_NAME = "add_subject_name"
+    ADD_SUBJECT_DESCRIPTION = "add_subject_description"
+    ADD_SUBJECT_DIFFICULTY = "add_subject_difficulty"
+    ADD_SUBJECT_CATEGORY = "add_subject_category"
+    ADD_SUBJECT_HOURS = "add_subject_hours"
+    ADD_SUBJECT_PRIORITY = "add_subject_priority"
+    ADD_SUBJECT_DEADLINE = "add_subject_deadline"  # New step
+    ADD_SUBJECT_TAGS = "add_subject_tags"
+    ADD_SUBJECT_CONFIRM = "add_subject_confirm"
+    
+    # Schedule Creation Flow
+    CREATE_SCHEDULE_START = "create_schedule_start"
+    CREATE_SCHEDULE_NAME = "create_schedule_name"
+    CREATE_SCHEDULE_SUBJECTS = "create_schedule_subjects"
+    CREATE_SCHEDULE_DATES = "create_schedule_dates"
+    CREATE_SCHEDULE_DAILY_HOURS = "create_schedule_daily_hours"
+    CREATE_SCHEDULE_SESSION_DURATION = "create_schedule_session_duration"
+    CREATE_SCHEDULE_PREFERRED_TIMES = "create_schedule_preferred_times"
+    CREATE_SCHEDULE_CONFIRM = "create_schedule_confirm"
 
 if __name__ == "__main__":
     import uvicorn

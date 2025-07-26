@@ -1,16 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ScheduleProvider } from "./contexts/ScheduleContext";
 import Navbar from "./components/Layout/Navbar";
-import Dashboard from "./components/Dashboard/Dashboard";
-import SchedulePage from "./components/Schedule/SchedulePage";
-import Subjects from "./components/Dashboard/Subjects";
-import Analytics from "./components/Dashboard/Analytics";
+import DashboardPage from "./pages/DashboardPage";
+import SchedulePage from "./pages/SchedulePage";
+import SubjectPage from "./pages/SubjectPage";
 import UserProfile from "./components/Dashboard/UserProfile";
 import LoginForm from "./components/Auth/LoginForm";
 import RegisterForm from "./components/Auth/RegisterForm";
 import ChatWidget from "./components/Chat/ChatWidget";
+import ErrorBoundary from "./components/Common/ErrorBoundary";
+import { chatStorage } from "./services/chatbot";
 
 const LoginWithNavigate = () => {
   const navigate = useNavigate();
@@ -27,7 +30,19 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(() => {
+    // Load chat widget state from localStorage
+    return chatStorage.getWidgetState();
+  });
+
+  // Persist chat widget state to localStorage
+  useEffect(() => {
+    chatStorage.setWidgetState(isChatOpen);
+  }, [isChatOpen]);
+
+  const toggleChat = () => {
+    setIsChatOpen((prev) => !prev);
+  };
 
   if (isLoading) {
     return (
@@ -48,10 +63,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
       <main className="flex-grow bg-gradient-to-b from-gray-900 to-indigo-900">
         {children}
       </main>
-      <ChatWidget
-        isOpen={isChatOpen}
-        onToggle={() => setIsChatOpen(!isChatOpen)}
-      />
+      <ErrorBoundary>
+        <ChatWidget isOpen={isChatOpen} onToggle={toggleChat} />
+      </ErrorBoundary>
     </>
   );
 };
@@ -69,17 +83,29 @@ const App: React.FC = () => (
               element={
                 <ProtectedRoute>
                   <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/" element={<DashboardPage />} />
+                    <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/schedule" element={<SchedulePage />} />
-                    <Route path="/subjects" element={<Subjects />} />
-                    <Route path="/analytics" element={<Analytics />} />
+                    <Route path="/subjects" element={<SubjectPage />} />
                     <Route path="/profile" element={<UserProfile />} />
                   </Routes>
                 </ProtectedRoute>
               }
             />
           </Routes>
+
+          {/* Toast Container */}
+          <ToastContainer
+            position="bottom-right"
+            autoClose={3000}
+            hideProgressBar={false}
+            newestOnTop
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+          />
         </div>
       </BrowserRouter>
     </ScheduleProvider>

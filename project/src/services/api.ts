@@ -1,5 +1,12 @@
 import axios from "axios";
-import { User, Subject, DashboardAnalytics, StudySession, Schedule, ScheduleSession } from "../types";
+import {
+  User,
+  Subject,
+  DashboardAnalytics,
+  StudySession,
+  Schedule,
+  ScheduleSession,
+} from "../types";
 
 const api = axios.create({
   baseURL: "http://localhost:5000/api",
@@ -7,13 +14,13 @@ const api = axios.create({
 
 // Add request logging for debugging rate limits
 api.interceptors.request.use((request) => {
-  console.log(`API Request: ${request.method?.toUpperCase()} ${request.url}`);
+  // Request logging disabled for production
   return request;
 });
 
 api.interceptors.response.use(
   (response) => {
-    console.log(`API Response: ${response.status} ${response.config.url}`);
+    // Response logging disabled for production
     return response;
   },
   (error) => {
@@ -22,7 +29,9 @@ api.interceptors.response.use(
       error.message
     );
     if (error.response?.status === 429) {
-      console.warn("Rate limit exceeded. Consider reducing API call frequency.");
+      console.warn(
+        "Rate limit exceeded. Consider reducing API call frequency."
+      );
     }
     return Promise.reject(error);
   }
@@ -186,17 +195,25 @@ export const apiService = {
   },
 
   getScheduleWithSessions: async (scheduleId: string) => {
-    const response = await api.get<{ schedule: Schedule }>(`/schedules/${scheduleId}`);
+    const response = await api.get<{ schedule: Schedule }>(
+      `/schedules/${scheduleId}`
+    );
     return response.data;
   },
 
   createSchedule: async (scheduleData: Partial<Schedule>) => {
-    const response = await api.post<{ schedule: Schedule }>("/schedules", scheduleData);
+    const response = await api.post<{ schedule: Schedule }>(
+      "/schedules",
+      scheduleData
+    );
     return response.data;
   },
 
   updateSchedule: async (id: string, scheduleData: Partial<Schedule>) => {
-    const response = await api.put<{ schedule: Schedule }>(`/schedules/${id}`, scheduleData);
+    const response = await api.put<{ schedule: Schedule }>(
+      `/schedules/${id}`,
+      scheduleData
+    );
     return response.data;
   },
 
@@ -206,23 +223,38 @@ export const apiService = {
   },
 
   // Schedule Session Management
-  getScheduleSessions: async (scheduleId?: string, startDate?: string, endDate?: string) => {
+  getScheduleSessions: async (
+    scheduleId?: string,
+    startDate?: string,
+    endDate?: string
+  ) => {
     const params = new URLSearchParams();
-    if (scheduleId) params.append('scheduleId', scheduleId);
-    if (startDate) params.append('startDate', startDate);
-    if (endDate) params.append('endDate', endDate);
-    
-    const response = await api.get<{ sessions: ScheduleSession[] }>(`/schedule-sessions?${params}`);
+    if (scheduleId) params.append("scheduleId", scheduleId);
+    if (startDate) params.append("startDate", startDate);
+    if (endDate) params.append("endDate", endDate);
+
+    const response = await api.get<{ sessions: ScheduleSession[] }>(
+      `/schedule-sessions?${params}`
+    );
     return response.data;
   },
 
   createScheduleSession: async (sessionData: Partial<ScheduleSession>) => {
-    const response = await api.post<{ session: ScheduleSession }>("/schedule-sessions", sessionData);
+    const response = await api.post<{ session: ScheduleSession }>(
+      "/schedule-sessions",
+      sessionData
+    );
     return response.data;
   },
 
-  updateScheduleSession: async (id: string, sessionData: Partial<ScheduleSession>) => {
-    const response = await api.put<{ session: ScheduleSession }>(`/schedule-sessions/${id}`, sessionData);
+  updateScheduleSession: async (
+    id: string,
+    sessionData: Partial<ScheduleSession>
+  ) => {
+    const response = await api.put<{ session: ScheduleSession }>(
+      `/schedule-sessions/${id}`,
+      sessionData
+    );
     return response.data;
   },
 
@@ -231,36 +263,49 @@ export const apiService = {
     return response.data;
   },
 
-  updateSessionStatus: async (id: string, status: ScheduleSession['status']) => {
-    const response = await api.patch<{ session: ScheduleSession }>(`/schedule-sessions/${id}/status`, { status });
+  updateSessionStatus: async (
+    id: string,
+    status: ScheduleSession["status"]
+  ) => {
+    const response = await api.patch<{ session: ScheduleSession }>(
+      `/schedule-sessions/${id}/status`,
+      { status }
+    );
     return response.data;
   },
 
   // Smart Schedule Generation
   generateSmartSchedule: async (
-    subjects: string[], 
-    preferences: any, 
-    startDate: string, 
-    endDate: string, 
-    scheduleType: 'real' | 'demo' | 'template' = 'real',
+    subjects: string[],
+    preferences: any,
+    startDate: string,
+    endDate: string,
+    scheduleType: "real" | "demo" | "template" = "real",
     signal?: AbortSignal
   ) => {
-    const response = await api.post<{ schedule: Schedule }>("/schedules/generate", {
-      subjects,
-      preferences,
-      startDate,
-      endDate,
-      scheduleType
-    }, {
-      signal,
-      timeout: 35000 // 35 second timeout (slightly longer than backend timeout)
-    });
+    const response = await api.post<{ schedule: Schedule }>(
+      "/schedules/generate",
+      {
+        subjects,
+        preferences,
+        startDate,
+        endDate,
+        scheduleType,
+      },
+      {
+        signal,
+        timeout: 35000, // 35 second timeout (slightly longer than backend timeout)
+      }
+    );
     return response.data;
   },
 
   // Clear demo schedules
   clearDemoSchedules: async () => {
-    const response = await api.delete<{ message: string; deletedCount: number }>("/schedules/demo");
+    const response = await api.delete<{
+      message: string;
+      deletedCount: number;
+    }>("/schedules/demo");
     return response.data;
   },
 
