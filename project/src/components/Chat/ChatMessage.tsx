@@ -37,7 +37,9 @@ const ChatMessage: React.FC<ChatMessageProps> = React.memo(({ message }) => {
         <div className="flex flex-col">
           <div
             className={`px-4 py-2 rounded-lg shadow-sm ${
-              isBot
+              message.isError
+                ? "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-100 border border-red-200 dark:border-red-700 rounded-bl-none"
+                : isBot
                 ? "bg-indigo-200 dark:bg-indigo-800 text-gray-800 dark:text-indigo-100 rounded-bl-none"
                 : "bg-cyan-200 dark:bg-cyan-800 text-gray-800 dark:text-cyan-100 rounded-br-none"
             }`}

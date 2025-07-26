@@ -196,6 +196,8 @@ class OptimalSubjectRequest(BaseModel):
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         user_data = auth_manager.verify_token(credentials.credentials)
+        # Add the original token to user_data for backend API calls
+        user_data['token'] = credentials.credentials
         return user_data
     except Exception as e:
         logger.error(f"Authentication error: {e}")
@@ -270,6 +272,44 @@ async def chat(message: ChatMessage, current_user: dict = Depends(get_current_us
             detail=f"Error processing message: {str(e)}"
         )
 
+@app.post("/chat/demo", response_model=ChatResponse)
+async def chat_demo(message: ChatMessage):
+    """Demo chat endpoint that doesn't require authentication"""
+    try:
+        logger.info(f"Processing demo message: {message.message}")
+        
+        # Create a demo user for testing (no authentication)
+        demo_user = {
+            'user_id': 'demo_user',
+            'email': 'demo@example.com',
+            'firstName': 'Demo',
+            'lastName': 'User'
+        }
+        
+        # Process the message through NLP
+        processed_message = nlp_processor.process(message.message)
+        
+        # Classify intent
+        intent_result = intent_classifier.classify(processed_message)
+        
+        # Generate response based on intent
+        response_data = await generate_response(
+            message=message.message,
+            intent_result=intent_result,
+            processed_message=processed_message,
+            user_data=demo_user,
+            conversation_id=message.conversation_id or "demo_conversation"
+        )
+        
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"Error processing demo chat message: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing message: {str(e)}"
+        )
+
 @app.post("/schedule/create")
 async def create_schedule_from_chat(
     schedule_req: ScheduleRequest, 
@@ -333,11 +373,15 @@ async def generate_response(
         clear_conversation_state(user_id)
         return show_main_menu()
     
-    # Check for specific action triggers
-    if any(keyword in message.lower() for keyword in ["add subject", "new subject", "create subject"]):
+    # Check for specific action triggers (prioritize these over intent classification)
+    message_lower = message.lower().strip()
+    
+    if any(keyword in message_lower for keyword in ["add subject", "new subject", "create subject"]):
+        logger.info(f"Detected subject creation keywords in: {message}")
         return await start_add_subject_flow(user_id, user_data)
     
-    if any(keyword in message.lower() for keyword in ["create schedule", "new schedule", "generate schedule", "prioritized schedule", "AI schedule"]):
+    if any(keyword in message_lower for keyword in ["create schedule", "new schedule", "generate schedule", "prioritized schedule", "AI schedule", "schedule generation"]):
+        logger.info(f"Detected schedule creation keywords in: {message}")
         return await start_create_schedule_flow(user_id, user_data)
     
     # Check for prioritization-related keywords
@@ -367,7 +411,22 @@ async def generate_response(
     elif intent == 'get_schedule':
         return await handle_get_schedule_intent(entities, user_data, conversation_id, confidence)
     elif intent == 'general_question':
-        return await handle_general_question_intent(message, user_data, conversation_id, confidence)
+        # Handle general questions with helpful responses
+        return ChatResponse(
+            response="🤖 **I'm here to help with your study planning!**\n\nI can help you:\n• Create and manage subjects\n• Generate AI-optimized study schedules\n• Get study recommendations\n• Track your progress\n\nWhat would you like to do?",
+            intent="general_help",
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=conversation_id,
+            quick_actions=[
+                {"id": "add-subject", "label": "📝 Add Subject", "icon": "plus", "message": "add subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                {"id": "create-schedule", "label": "📅 Create Schedule", "icon": "calendar", "message": "generate schedule", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                {"id": "get-recommendation", "label": "🎯 Get Recommendation", "icon": "target", "message": "what should I study", "color": "bg-purple-600 hover:bg-purple-700 text-white"},
+                {"id": "main-menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+            ],
+            suggestions=["Add subject", "Generate schedule", "What should I study?", "Main menu"]
+        )
     else:
         # Show main menu for unclear requests
         return show_main_menu()
@@ -721,24 +780,20 @@ async def handle_subject_confirm_step(message: str, user_id: str, data: dict, us
     if response_text in ["yes", "confirm", "create", "save"]:
         # Create the subject using enhanced prioritization API
         try:
-            # Map difficulty and priority to numbers for prioritization engine
-            difficulty_map = {"beginner": 1, "intermediate": 2, "advanced": 3}
-            priority_map = {"low": 1, "medium": 2, "high": 3}
-            
             subject_data = {
                 "name": data['name'],
                 "description": data.get('description', ''),
-                "difficulty": difficulty_map.get(data['difficulty'], 1),
-                "priority": priority_map.get(data['priority'], 2),
+                "difficulty": data['difficulty'],  # Keep as string for backend validation
+                "priority": data['priority'],      # Keep as string for backend validation
                 "category": data['category'],
-                "estimated_hours": data['estimatedHours'],
+                "estimatedHours": data['estimatedHours'],  # Correct field name
                 "deadline": data.get('deadline'),  # Include deadline
                 "tags": data.get('tags', [])
             }
             
-            # Use enhanced prioritization API
+            # Use enhanced prioritization API - works for both demo and real users
             result = await backend_client.post(
-                f"/add_subject",  # Use the new prioritization endpoint
+                f"/subjects",  # Backend client already includes /api prefix
                 data=subject_data,
                 headers={"Authorization": f"Bearer {user_data.get('token', '')}"}
             )

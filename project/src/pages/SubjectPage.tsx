@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   Filter,
@@ -12,6 +13,7 @@ import {
   MessageCircle,
   Star,
   Calendar,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { Subject } from "../types";
@@ -20,6 +22,7 @@ import { apiService } from "../services/api";
 
 const SubjectPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [filteredSubjects, setFilteredSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,7 +153,7 @@ const SubjectPage: React.FC = () => {
     setEditForm({
       description: subject.description,
       priority: subject.priority,
-      estimated_hours: subject.estimated_hours,
+      estimated_hours: subject.estimated_hours || subject.estimatedHours || 0,
       progress: subject.progress,
     });
   };
@@ -184,26 +187,90 @@ const SubjectPage: React.FC = () => {
     }
   };
 
-  const handleProgressUpdate = async (
-    subjectId: string,
-    newProgress: number
-  ) => {
+  const refreshSubjectProgress = async (subjectId: string) => {
     try {
-      await apiService.updateSubjectProgress(subjectId, newProgress);
+      console.log("🔄 Refreshing progress for subject:", subjectId);
 
-      setSubjects((prev) =>
-        prev.map((subject) =>
-          subject._id === subjectId
-            ? { ...subject, progress: newProgress }
-            : subject
-        )
+      // Call the backend to recalculate progress from sessions
+      const response = await fetch(
+        `http://localhost:5000/api/subjects/${subjectId}/progress`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            "Content-Type": "application/json",
+          },
+        }
       );
 
-      toast.success("Progress updated!");
+      console.log("📡 Response status:", response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("📊 Progress data received:", data);
+
+        // Update the subject in local state
+        setSubjects((prev) =>
+          prev.map((subject) =>
+            subject._id === subjectId
+              ? { ...subject, ...data.subject }
+              : subject
+          )
+        );
+
+        // Also update filtered subjects
+        setFilteredSubjects((prev) =>
+          prev.map((subject) =>
+            subject._id === subjectId
+              ? { ...subject, ...data.subject }
+              : subject
+          )
+        );
+
+        toast.success(`Progress refreshed: ${data.calculatedProgress}%`);
+      } else {
+        const errorData = await response.json();
+        console.error("❌ Server error:", errorData);
+        toast.error(
+          `Failed to refresh progress: ${errorData.message || "Unknown error"}`
+        );
+      }
     } catch (error) {
-      console.error("Error updating progress:", error);
-      toast.error("Failed to update progress");
+      console.error("❌ Error refreshing progress:", error);
+      toast.error("Failed to refresh progress - network error");
     }
+  };
+
+  // Handler for Analytics button
+  const handleAnalytics = (subject: Subject) => {
+    // Navigate to dashboard with subject filter
+    navigate("/dashboard", {
+      state: {
+        focusSubject: subject._id,
+        subjectName: subject.name,
+      },
+    });
+    toast.info(`Viewing analytics for ${subject.name}`);
+  };
+
+  // Handler for Schedule button
+  const handleSchedule = (subject: Subject) => {
+    // Navigate to schedule page and trigger chatbot
+    navigate("/schedule");
+
+    // Small delay to ensure page loads, then trigger chatbot
+    setTimeout(() => {
+      const event = new CustomEvent("open-chatbot", {
+        detail: {
+          action: "schedule",
+          subject: subject.name,
+          message: `Create a study schedule for ${subject.name}`,
+        },
+      });
+      window.dispatchEvent(event);
+    }, 500);
+
+    toast.info(`Creating schedule for ${subject.name}`);
   };
 
   const getPriorityColor = (priority: string) => {
@@ -344,11 +411,21 @@ const SubjectPage: React.FC = () => {
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center space-x-2 text-gray-300">
                       <Clock className="w-4 h-4" />
-                      <span>{subject.estimated_hours}h estimated</span>
+                      <span>
+                        {subject.estimated_hours || subject.estimatedHours || 0}
+                        h estimated
+                      </span>
                     </div>
                     <div className="flex items-center space-x-2 text-gray-300">
                       <Target className="w-4 h-4" />
                       <span>{subject.progress}% complete</span>
+                      <button
+                        onClick={() => refreshSubjectProgress(subject._id)}
+                        className="ml-2 p-1 text-gray-400 hover:text-gray-200 transition-colors"
+                        title="Refresh progress from completed sessions"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
 
@@ -362,40 +439,25 @@ const SubjectPage: React.FC = () => {
                     ></div>
                   </div>
 
-                  {/* Progress Slider */}
+                  {/* Progress Info */}
                   <div className="mt-2">
-                    <label className="text-xs text-gray-400 mb-1 block">
-                      Update Progress:
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={subject.progress}
-                      onChange={(e) =>
-                        handleProgressUpdate(
-                          subject._id,
-                          parseInt(e.target.value)
-                        )
-                      }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-                    />
+                    <p className="text-xs text-gray-400 text-center">
+                      Progress calculated from completed study sessions
+                    </p>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
                 <div className="flex space-x-2">
-                  <button className="flex-1 px-3 py-2 bg-purple-600/20 text-purple-300 rounded-lg text-sm hover:bg-purple-600/30 transition-colors border border-purple-500/30">
+                  <button
+                    onClick={() => handleAnalytics(subject)}
+                    className="flex-1 px-3 py-2 bg-purple-600/20 text-purple-300 rounded-lg text-sm hover:bg-purple-600/30 transition-colors border border-purple-500/30"
+                  >
                     <TrendingUp className="w-4 h-4 inline mr-1" />
                     Analytics
                   </button>
                   <button
-                    onClick={() => {
-                      const event = new CustomEvent("open-chatbot", {
-                        detail: { action: "schedule", subject: subject.name },
-                      });
-                      window.dispatchEvent(event);
-                    }}
+                    onClick={() => handleSchedule(subject)}
                     className="flex-1 px-3 py-2 bg-cyan-600/20 text-cyan-300 rounded-lg text-sm hover:bg-cyan-600/30 transition-colors border border-cyan-500/30"
                   >
                     <Calendar className="w-4 h-4 inline mr-1" />

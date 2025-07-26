@@ -99,6 +99,7 @@ export interface ChatMessage {
   quickActions?: QuickAction[];
   suggestions?: string[];
   conversationId?: string;
+  isError?: boolean;
 }
 
 export interface QuickAction {

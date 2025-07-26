@@ -94,6 +94,22 @@ class BackendClient:
             logger.error(f"Unexpected error in backend request: {e}")
             raise
     
+    async def get(self, endpoint: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Make GET request to backend"""
+        return await self.make_request('GET', endpoint, headers=headers)
+    
+    async def post(self, endpoint: str, data: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Make POST request to backend"""
+        return await self.make_request('POST', endpoint, data=data, headers=headers)
+    
+    async def put(self, endpoint: str, data: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Make PUT request to backend"""
+        return await self.make_request('PUT', endpoint, data=data, headers=headers)
+    
+    async def delete(self, endpoint: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Make DELETE request to backend"""
+        return await self.make_request('DELETE', endpoint, headers=headers)
+    
     async def get_user_subjects(self, user_id: str, auth_token: str) -> List[Dict[str, Any]]:
         """Get all subjects for a user"""
         try:

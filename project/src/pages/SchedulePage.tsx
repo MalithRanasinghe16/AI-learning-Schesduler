@@ -27,7 +27,7 @@ const SchedulePage: React.FC = () => {
     null
   );
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("active");
   const [searchTerm, setSearchTerm] = useState("");
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualForm, setManualForm] = useState({
@@ -73,11 +73,18 @@ const SchedulePage: React.FC = () => {
         const schedulesData = await schedulesResponse.json();
         const subjectsData = await subjectsResponse.json();
 
-        setSchedules(schedulesData);
-        setSubjects(subjectsData);
+        console.log("📅 Schedules response:", schedulesData);
+        console.log("📚 Subjects response:", subjectsData);
 
-        if (schedulesData.length > 0) {
-          setSelectedSchedule(schedulesData[0]);
+        // Handle the response format from backend
+        const schedules = schedulesData.schedules || schedulesData;
+        const subjects = subjectsData.subjects || subjectsData;
+
+        setSchedules(schedules);
+        setSubjects(subjects);
+
+        if (schedules.length > 0) {
+          setSelectedSchedule(schedules[0]);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -165,9 +172,9 @@ const SchedulePage: React.FC = () => {
   ) => {
     try {
       const response = await fetch(
-        `http://localhost:5000/api/schedule-blocks/${blockId}/status`,
+        `http://localhost:5000/api/schedule-sessions/${blockId}/status`,
         {
-          method: "PUT",
+          method: "PATCH",
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token")}`,
             "Content-Type": "application/json",
@@ -184,9 +191,10 @@ const SchedulePage: React.FC = () => {
       setSchedules((prev) =>
         prev.map((schedule) => ({
           ...schedule,
-          blocks: schedule.blocks.map((block) =>
-            block._id === blockId ? { ...block, status: newStatus } : block
-          ),
+          blocks:
+            schedule.blocks?.map((block) =>
+              block._id === blockId ? { ...block, status: newStatus } : block
+            ) || [],
         }))
       );
 
@@ -195,11 +203,12 @@ const SchedulePage: React.FC = () => {
           prev
             ? {
                 ...prev,
-                blocks: prev.blocks.map((block) =>
-                  block._id === blockId
-                    ? { ...block, status: newStatus }
-                    : block
-                ),
+                blocks:
+                  prev.blocks?.map((block) =>
+                    block._id === blockId
+                      ? { ...block, status: newStatus }
+                      : block
+                  ) || [],
               }
             : null
         );
@@ -263,9 +272,11 @@ const SchedulePage: React.FC = () => {
   };
 
   const filteredBlocks =
-    selectedSchedule?.blocks.filter((block) => {
+    selectedSchedule?.blocks?.filter((block) => {
       const matchesStatus =
-        filterStatus === "all" || block.status === filterStatus;
+        filterStatus === "all" ||
+        (filterStatus === "active" && block.status !== "completed") ||
+        block.status === filterStatus;
       const matchesSearch =
         !searchTerm ||
         block.subjectName.toLowerCase().includes(searchTerm.toLowerCase());
@@ -353,7 +364,8 @@ const SchedulePage: React.FC = () => {
                     {new Date(schedule.end_date).toLocaleDateString()}
                   </p>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {schedule.blocks.length} sessions • {schedule.daily_hours}
+                    {schedule.blocks?.length || 0} sessions •{" "}
+                    {schedule.daily_hours}
                     h/day
                   </p>
                 </button>
@@ -384,6 +396,7 @@ const SchedulePage: React.FC = () => {
                     onChange={(e) => setFilterStatus(e.target.value)}
                     className="pl-10 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   >
+                    <option value="active">Active Sessions</option>
                     <option value="all">All Sessions</option>
                     <option value="scheduled">Scheduled</option>
                     <option value="in-progress">In Progress</option>
@@ -508,9 +521,10 @@ const SchedulePage: React.FC = () => {
                   No sessions found
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400">
-                  {searchTerm || filterStatus !== "all"
+                  {searchTerm ||
+                  (filterStatus !== "active" && filterStatus !== "all")
                     ? "Try adjusting your search or filter criteria."
-                    : "No sessions scheduled for this period."}
+                    : "No active sessions scheduled for this period."}
                 </p>
               </div>
             )}
