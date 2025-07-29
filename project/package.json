@@ -13,7 +13,9 @@
     "server": "tsx server/server.ts",
     "lint": "eslint .",
     "clean": "rimraf dist node_modules/.cache",
-    "setup": "npm install && cd chatbot && pip install -r requirements.txt"
+    "setup": "npm install && cd chatbot && pip install -r requirements.txt",
+    "start:all": "scripts\\start_all.bat",
+    "docs": "echo Opening project documentation... && start docs\\project-structure.md"
   },
   "dependencies": {
     "@types/moment": "^2.13.0",
