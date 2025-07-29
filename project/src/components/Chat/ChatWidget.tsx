@@ -9,7 +9,6 @@ import React, {
 import {
   Send,
   Bot,
-  Minimize2,
   X,
   Brain,
   Calendar,
@@ -17,6 +16,8 @@ import {
   BarChart3,
   Loader2,
   RotateCcw,
+  Trash2,
+  Minus,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import { useAuth } from "../../contexts/AuthContext";
@@ -32,6 +33,7 @@ import {
   debounce,
   chatStorage,
 } from "../../services/chatbot";
+import { analyticsService } from "../../services/analyticsService";
 
 // Lazy load components for better performance
 const ChatMessage = lazy(() => import("./ChatMessage"));
@@ -67,36 +69,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onToggle }) => {
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // Enhanced quick actions with AI prioritization features
-  const defaultQuickActions: QuickAction[] = [
-    {
-      id: "add-subject",
-      label: "Add Subject",
-      icon: "plus",
-      message: "Add a new subject",
-      color: "bg-purple-500 hover:bg-purple-600 text-white",
-    },
-    {
-      id: "generate-schedule",
-      label: "Generate Schedule",
-      icon: "calendar",
-      message: "Generate an AI-optimized schedule",
-      color: "bg-indigo-500 hover:bg-indigo-600 text-white",
-    },
-    {
-      id: "get-recommendation",
-      label: "Get AI Recommendation",
-      icon: "brain",
-      message: "What should I study next?",
-      color: "bg-cyan-500 hover:bg-cyan-600 text-white",
-    },
-    {
-      id: "view-analytics",
-      label: "View Progress",
-      icon: "chart",
-      message: "Show my study progress and analytics",
-      color: "bg-orange-500 hover:bg-orange-600 text-white",
-    },
-  ];
+  const defaultQuickActions: QuickAction[] = [];
 
   // Add error boundary component for lazy loading
   const ErrorFallback = ({
@@ -161,24 +134,37 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onToggle }) => {
         if (savedMessages.length > 0) {
           setMessages(savedMessages);
         } else {
-          // Set initial welcome message
-          const welcomeMessage = createChatMessage(
-            `🤖 **Welcome to your AI Study Assistant!**
+          // Send initial main menu request to backend
+          try {
+            const response = await chatbotService.sendMessage({
+              message: "main menu",
+              user_id: user?._id || "anonymous",
+              conversation_id: undefined,
+            });
 
-I'm here to help you with:
-✅ **Adding subjects** with AI prioritization
-✅ **Creating optimized schedules** 
-✅ **Getting study recommendations**
-✅ **Tracking your progress**
+            const botMessage = createChatMessage(response.response, "bot", {
+              intent: response.intent,
+              confidence: response.confidence,
+              entities: response.entities,
+              quickActions: response.quick_actions || [],
+              suggestions: response.suggestions || [],
+            });
+            setMessages([botMessage]);
+          } catch (error) {
+            console.error("❌ Failed to load main menu:", error);
+            // Fallback to simple welcome message
+            const fallbackMessage = createChatMessage(
+              `🤖 **Welcome to your AI Study Assistant!**
 
-Ask me anything or use the quick actions below! 🚀`,
-            "bot",
-            {
-              quickActions: defaultQuickActions,
-              suggestions: [],
-            }
-          );
-          setMessages([welcomeMessage]);
+I'm here to help you with your study planning. How can I assist you today?`,
+              "bot",
+              {
+                quickActions: [],
+                suggestions: [],
+              }
+            );
+            setMessages([fallbackMessage]);
+          }
         }
       } catch (error) {
         console.error("❌ Chat initialization error:", error);
@@ -326,6 +312,12 @@ Ask me anything or use the quick actions below! 🚀`,
     const message = messageText || inputText.trim();
     if (!message || isLoading) return;
 
+    // Track analytics for user interactions (only if not from quick actions)
+    if (!messageText) {
+      // This means it's typed by user, not from quick action
+      analyticsService.reportChatbotInteraction("general");
+    }
+
     // For demo purposes, create a demo user if no user is logged in
     const currentUserId = user?._id || "demo_user_12345";
 
@@ -352,6 +344,26 @@ Ask me anything or use the quick actions below! 🚀`,
   };
 
   const handleQuickAction = (action: QuickAction) => {
+    // Track analytics based on action type
+    if (
+      action.id === "view_schedule" ||
+      action.message.toLowerCase().includes("schedule")
+    ) {
+      analyticsService.reportChatbotInteraction("view_schedule");
+    } else if (
+      action.id === "recommendation" ||
+      action.message.toLowerCase().includes("recommend")
+    ) {
+      analyticsService.reportChatbotInteraction("get_recommendation");
+    } else if (
+      action.id === "create_subject" ||
+      action.message.toLowerCase().includes("subject")
+    ) {
+      analyticsService.reportChatbotInteraction("create_subject");
+    } else {
+      analyticsService.reportChatbotInteraction("general");
+    }
+
     handleSendMessage(action.message);
   };
 
@@ -375,37 +387,81 @@ Ask me anything or use the quick actions below! 🚀`,
     }
   };
 
-  const handleClearChat = () => {
-    // Clear messages from state
-    setMessages([]);
-    // Clear from local storage
-    chatStorage.clearConversationHistory();
-    // Reset conversation context
-    setConversationId("");
-    setChatContext({
-      currentStep: "",
-      flow: null,
-    });
-    // Show a fresh welcome message
-    const welcomeMessage = createChatMessage(
-      `🤖 **Chat Cleared!**
+  const handleClearChat = async () => {
+    try {
+      // Clear messages from state
+      setMessages([]);
+      // Clear from local storage
+      chatStorage.clearConversationHistory();
+      // Reset conversation context
+      setConversationId("");
+      setChatContext({
+        currentStep: "",
+        flow: null,
+      });
 
-Welcome back to your AI Study Assistant! 
+      // Send main menu request to backend to reset server conversation state
+      const response = await chatbotService.sendMessage({
+        message: "main menu",
+        user_id: user?._id || "anonymous",
+        conversation_id: undefined, // This ensures a new conversation
+      });
 
-I'm here to help you with:
-✅ **Adding subjects** with AI prioritization
-✅ **Creating optimized schedules** 
-✅ **Getting study recommendations**
-✅ **Tracking your progress**
+      const botMessage = createChatMessage(response.response, "bot", {
+        intent: response.intent,
+        confidence: response.confidence,
+        entities: response.entities,
+        quickActions: response.quick_actions || [],
+        suggestions: response.suggestions || [],
+      });
+      setMessages([botMessage]);
 
-How can I assist you today? 🚀`,
-      "bot",
-      {
-        quickActions: defaultQuickActions,
-        suggestions: [],
-      }
-    );
-    setMessages([welcomeMessage]);
+      toast.success("Chat cleared successfully!", {
+        position: "bottom-right",
+        autoClose: 2000,
+      });
+    } catch (error) {
+      console.error("❌ Failed to load main menu:", error);
+      // Fallback to simple message
+      const fallbackMessage = createChatMessage(
+        `🤖 **Chat Cleared!**
+
+Welcome back to your AI Study Assistant! How can I assist you today?`,
+        "bot",
+        {
+          quickActions: [],
+          suggestions: [],
+        }
+      );
+      setMessages([fallbackMessage]);
+
+      toast.info("Chat cleared (offline mode)", {
+        position: "bottom-right",
+        autoClose: 2000,
+      });
+    }
+  };
+
+  const handleRefreshChat = async () => {
+    try {
+      setIsLoading(true);
+
+      // Only refresh the connection - don't clear chat history
+      await checkChatbotHealth();
+
+      toast.success("Chatbot connection refreshed!", {
+        position: "bottom-right",
+        autoClose: 2000,
+      });
+    } catch (error) {
+      console.error("❌ Failed to refresh chatbot connection:", error);
+      toast.error("Failed to refresh connection. Please try again.", {
+        position: "bottom-right",
+        autoClose: 3000,
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Get current quick actions (default or from latest bot message)
@@ -505,26 +561,30 @@ How can I assist you today? 🚀`,
             </div>
             <div className="flex items-center space-x-2">
               <button
+                onClick={handleRefreshChat}
+                className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+                aria-label="Refresh chatbot connection"
+                title="Refresh chatbot connection"
+                disabled={isLoading}
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+              <button
                 onClick={handleClearChat}
                 className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
                 aria-label="Clear chat"
-                title="Clear chat history"
+                title="Clear chat history and reset conversation"
+                disabled={isLoading}
               >
-                <RotateCcw className="h-4 w-4" />
+                <Trash2 className="h-4 w-4" />
               </button>
               <button
                 onClick={onToggle}
                 className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
                 aria-label="Minimize chat"
+                title="Close chat widget"
               >
-                <Minimize2 className="h-4 w-4" />
-              </button>
-              <button
-                onClick={onToggle}
-                className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
-                aria-label="Close chat"
-              >
-                <X className="h-4 w-4" />
+                <Minus className="h-4 w-4" />
               </button>
             </div>
           </div>

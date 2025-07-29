@@ -17,12 +17,10 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { Analytics } from "../types";
 import { toast } from "react-toastify";
-import { testAnalytics } from "../utils/testAnalytics";
 import {
   analyticsService,
   EnhancedAnalytics,
 } from "../services/analyticsService";
-import "../utils/debugAnalytics"; // Import debug utilities
 
 // Lazy load Chart.js component for performance
 const AnalyticsChart = lazy(
@@ -62,7 +60,7 @@ const Dashboard: React.FC = () => {
       console.error("Error fetching enhanced analytics:", error);
       toast.error("Failed to load analytics data");
 
-      // Set empty analytics when backends fail
+      // Set fallback analytics with mock data
       setAnalytics({
         totalStudyTime: 0,
         weeklyStudyTime: [0, 0, 0, 0, 0, 0, 0],
@@ -70,23 +68,7 @@ const Dashboard: React.FC = () => {
         focusScore: 0,
         progressVelocity: 0,
         weeklyLabels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-        insights: [
-          "Unable to connect to analytics backend. Please check your connection.",
-        ],
-        weeklyStats: {
-          totalStudyTime: 0,
-          totalSessions: 0,
-          averageFocus: 0,
-          completionRate: 0,
-          dailyStudyTime: [0, 0, 0, 0, 0, 0, 0],
-        },
-        subjectProgress: {
-          total: 0,
-          completed: 0,
-          inProgress: 0,
-          notStarted: 0,
-          details: [],
-        },
+        insights: ["Unable to load analytics data"],
         chatbotData: {
           totalInteractions: 0,
           completedSessions: 0,
@@ -121,44 +103,6 @@ const Dashboard: React.FC = () => {
   // Manual refresh handler
   const handleRefresh = () => {
     fetchAnalytics(true);
-  };
-
-  // Create test data for analytics (development only)
-  const createTestData = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        toast.error("Please login first");
-        return;
-      }
-
-      toast.info("Creating test data...");
-
-      const response = await fetch(
-        "http://localhost:5000/api/analytics/test-data",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        toast.success(
-          `Test data created! ${result.subjects} subjects, ${result.sessions} sessions`
-        );
-        // Refresh analytics after creating test data
-        setTimeout(() => fetchAnalytics(true), 1000);
-      } else {
-        toast.error("Failed to create test data");
-      }
-    } catch (error) {
-      console.error("Error creating test data:", error);
-      toast.error("Error creating test data");
-    }
   };
 
   const StatCard: React.FC<{
@@ -250,34 +194,6 @@ const Dashboard: React.FC = () => {
                 className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
               />
               Refresh
-            </button>
-            {/* Create test data button (development only) */}
-            <button
-              onClick={createTestData}
-              className="flex items-center px-3 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors text-sm"
-            >
-              📊 Create Test Data
-            </button>
-            {/* Debug button for development */}
-            <button
-              onClick={async () => {
-                try {
-                  console.log("🧪 Running analytics debug test...");
-                  const result = await testAnalytics();
-                  setAnalytics(result);
-                  toast.success(
-                    "Analytics debug completed! Check console for details."
-                  );
-                } catch (error) {
-                  console.error("❌ Debug failed:", error);
-                  toast.error(
-                    "Analytics debug failed. Check console for details."
-                  );
-                }
-              }}
-              className="flex items-center px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors text-sm"
-            >
-              🧪 Debug
             </button>
           </div>
         </div>

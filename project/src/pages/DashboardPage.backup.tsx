@@ -11,18 +11,11 @@ import {
   Zap,
   Award,
   RefreshCw,
-  Bot,
-  Activity,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { Analytics } from "../types";
 import { toast } from "react-toastify";
-import { testAnalytics } from "../utils/testAnalytics";
-import {
-  analyticsService,
-  EnhancedAnalytics,
-} from "../services/analyticsService";
-import "../utils/debugAnalytics"; // Import debug utilities
+import { analyticsService, EnhancedAnalytics } from "../services/analyticsService";
 
 // Lazy load Chart.js component for performance
 const AnalyticsChart = lazy(
@@ -43,16 +36,16 @@ const Dashboard: React.FC = () => {
       if (showToast) {
         toast.info("Refreshing analytics data...", { autoClose: 2000 });
       }
-
+      
       const enhancedData = await analyticsService.fetchEnhancedAnalytics();
       setAnalytics(enhancedData);
       setLastRefresh(new Date());
-
+      
       if (showToast) {
-        const sources: string[] = [];
+        const sources = [];
         if (enhancedData.dataSource.mainBackend) sources.push("main server");
         if (enhancedData.dataSource.chatbot) sources.push("chatbot");
-
+        
         toast.success(
           `Analytics updated from ${sources.join(" and ") || "cache"}`,
           { autoClose: 3000 }
@@ -61,8 +54,8 @@ const Dashboard: React.FC = () => {
     } catch (error) {
       console.error("Error fetching enhanced analytics:", error);
       toast.error("Failed to load analytics data");
-
-      // Set empty analytics when backends fail
+      
+      // Set fallback analytics with mock data
       setAnalytics({
         totalStudyTime: 0,
         weeklyStudyTime: [0, 0, 0, 0, 0, 0, 0],
@@ -70,46 +63,30 @@ const Dashboard: React.FC = () => {
         focusScore: 0,
         progressVelocity: 0,
         weeklyLabels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-        insights: [
-          "Unable to connect to analytics backend. Please check your connection.",
-        ],
-        weeklyStats: {
-          totalStudyTime: 0,
-          totalSessions: 0,
-          averageFocus: 0,
-          completionRate: 0,
-          dailyStudyTime: [0, 0, 0, 0, 0, 0, 0],
-        },
-        subjectProgress: {
-          total: 0,
-          completed: 0,
-          inProgress: 0,
-          notStarted: 0,
-          details: [],
-        },
+        insights: ["Unable to load analytics data"],
         chatbotData: {
           totalInteractions: 0,
           completedSessions: 0,
           progressUpdates: 0,
           aiRecommendations: 0,
           averageResponseTime: 0,
-          userEngagement: 0,
+          userEngagement: 0
         },
         lastUpdated: new Date(),
         dataSource: {
           mainBackend: false,
-          chatbot: false,
-        },
+          chatbot: false
+        }
       });
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch analytics data on component mount and set up auto-refresh
+  // Fetch analytics data
   useEffect(() => {
     fetchAnalytics();
-
+    
     // Set up auto-refresh every 30 seconds
     const interval = setInterval(() => {
       fetchAnalytics();
@@ -117,81 +94,54 @@ const Dashboard: React.FC = () => {
 
     return () => clearInterval(interval);
   }, []);
-
-  // Manual refresh handler
-  const handleRefresh = () => {
-    fetchAnalytics(true);
-  };
-
-  // Create test data for analytics (development only)
-  const createTestData = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        toast.error("Please login first");
-        return;
+          insights: [
+            "Focus on high-priority subjects this week",
+            "Your completion rate improved by 12% this week",
+            "Consider studying earlier in the day for better focus",
+          ],
+        });
+      } finally {
+        setLoading(false);
       }
+    };
 
-      toast.info("Creating test data...");
-
-      const response = await fetch(
-        "http://localhost:5000/api/analytics/test-data",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        toast.success(
-          `Test data created! ${result.subjects} subjects, ${result.sessions} sessions`
-        );
-        // Refresh analytics after creating test data
-        setTimeout(() => fetchAnalytics(true), 1000);
-      } else {
-        toast.error("Failed to create test data");
-      }
-    } catch (error) {
-      console.error("Error creating test data:", error);
-      toast.error("Error creating test data");
-    }
-  };
+    fetchAnalytics();
+    // Set up polling for real-time updates
+    const interval = setInterval(fetchAnalytics, 30000); // Every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   const StatCard: React.FC<{
     title: string;
-    value: string;
+    value: string | number;
     icon: React.ReactNode;
     color: string;
     trend?: string;
   }> = ({ title, value, icon, color, trend }) => (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-all duration-300 hover:scale-105">
-      <div className={`border-l-4 ${color} pl-4`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 uppercase">
-              {title}
-            </h3>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-              {value}
+    <div
+      className={`bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border-l-4 ${color} transition-all duration-300 hover:shadow-lg animate-fade-in`}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            {title}
+          </p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            {value}
+          </p>
+          {trend && (
+            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+              {trend}
             </p>
-            {trend && (
-              <p className="text-sm text-gray-500 dark:text-gray-300 mt-1">
-                {trend}
-              </p>
-            )}
-          </div>
-          <div
-            className={`p-3 rounded-full bg-gradient-to-r ${color.replace(
-              "border-l-",
-              "from-"
-            )} to-cyan-500`}
-          >
-            {icon}
-          </div>
+          )}
+        </div>
+        <div
+          className={`p-3 rounded-full bg-gradient-to-r ${color.replace(
+            "border-l-",
+            "from-"
+          )} to-cyan-500`}
+        >
+          {icon}
         </div>
       </div>
     </div>
@@ -227,167 +177,47 @@ const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-indigo-900 text-white">
       <div className="container mx-auto px-4 py-8">
-        {/* Header with Refresh Button */}
-        <div className="mb-8 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">
-              Welcome back, {user?.firstName || "Student"}! 👋
-            </h1>
-            <p className="text-gray-300">
-              Here's your learning progress and quick actions for today.
-            </p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <div className="text-sm text-gray-400">
-              Last updated: {lastRefresh.toLocaleTimeString()}
-            </div>
-            <button
-              onClick={handleRefresh}
-              className="flex items-center px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-colors"
-              disabled={loading}
-            >
-              <RefreshCw
-                className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </button>
-            {/* Create test data button (development only) */}
-            <button
-              onClick={createTestData}
-              className="flex items-center px-3 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors text-sm"
-            >
-              📊 Create Test Data
-            </button>
-            {/* Debug button for development */}
-            <button
-              onClick={async () => {
-                try {
-                  console.log("🧪 Running analytics debug test...");
-                  const result = await testAnalytics();
-                  setAnalytics(result);
-                  toast.success(
-                    "Analytics debug completed! Check console for details."
-                  );
-                } catch (error) {
-                  console.error("❌ Debug failed:", error);
-                  toast.error(
-                    "Analytics debug failed. Check console for details."
-                  );
-                }
-              }}
-              className="flex items-center px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors text-sm"
-            >
-              🧪 Debug
-            </button>
-          </div>
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold mb-2">
+            Welcome back, {user?.firstName || "Student"}! 👋
+          </h1>
+          <p className="text-gray-300">
+            Here's your learning progress and quick actions for today.
+          </p>
         </div>
 
-        {/* Data Source Indicator */}
-        {analytics && (
-          <div className="mb-6 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
-            <div className="flex items-center space-x-4 text-sm">
-              <span className="text-gray-300">Data sources:</span>
-              <div
-                className={`flex items-center ${
-                  analytics.dataSource.mainBackend
-                    ? "text-green-400"
-                    : "text-red-400"
-                }`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full mr-2 ${
-                    analytics.dataSource.mainBackend
-                      ? "bg-green-400"
-                      : "bg-red-400"
-                  }`}
-                ></div>
-                Main Backend (Port 5000)
-              </div>
-              <div
-                className={`flex items-center ${
-                  analytics.dataSource.chatbot
-                    ? "text-green-400"
-                    : "text-red-400"
-                }`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full mr-2 ${
-                    analytics.dataSource.chatbot ? "bg-green-400" : "bg-red-400"
-                  }`}
-                ></div>
-                Chatbot (Port 8000)
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Enhanced Analytics Stats Grid */}
+        {/* Analytics Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard
             title="Total Study Time"
-            value={`${analytics?.totalStudyTime?.toFixed(1) || 0}h`}
+            value={`${analytics?.totalStudyTime || 0}h`}
             icon={<Clock className="h-6 w-6 text-white" />}
             color="border-l-cyan-500"
-            trend="This week"
+            trend="+12% this week"
           />
           <StatCard
             title="Completion Rate"
-            value={`${Math.round(analytics?.completionRate || 0)}%`}
+            value={`${analytics?.completionRate || 0}%`}
             icon={<Target className="h-6 w-6 text-white" />}
             color="border-l-indigo-500"
-            trend="Enhanced with AI data"
+            trend="+5% from last week"
           />
           <StatCard
             title="Focus Score"
-            value={`${analytics?.focusScore?.toFixed(1) || 0}/10`}
+            value={`${analytics?.focusScore || 0}/10`}
             icon={<Brain className="h-6 w-6 text-white" />}
             color="border-l-purple-500"
-            trend="AI-enhanced metric"
+            trend="Excellent focus!"
           />
           <StatCard
             title="Progress Velocity"
-            value={`${analytics?.progressVelocity?.toFixed(1) || 0}`}
+            value={`${analytics?.progressVelocity || 0}%`}
             icon={<TrendingUp className="h-6 w-6 text-white" />}
             color="border-l-green-500"
-            trend="Sessions/day"
+            trend="On track!"
           />
         </div>
-
-        {/* Chatbot Analytics Section */}
-        {analytics?.chatbotData && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <StatCard
-              title="AI Interactions"
-              value={`${analytics.chatbotData.totalInteractions}`}
-              icon={<Bot className="h-6 w-6 text-white" />}
-              color="border-l-yellow-500"
-              trend="This week"
-            />
-            <StatCard
-              title="AI Recommendations"
-              value={`${analytics.chatbotData.aiRecommendations}`}
-              icon={<Zap className="h-6 w-6 text-white" />}
-              color="border-l-orange-500"
-              trend="Used this week"
-            />
-            <StatCard
-              title="Progress Updates"
-              value={`${analytics.chatbotData.progressUpdates}`}
-              icon={<Activity className="h-6 w-6 text-white" />}
-              color="border-l-pink-500"
-              trend="Via chatbot"
-            />
-            <StatCard
-              title="Engagement Score"
-              value={`${Math.round(
-                (analytics.chatbotData.userEngagement || 0) * 100
-              )}%`}
-              icon={<Award className="h-6 w-6 text-white" />}
-              color="border-l-emerald-500"
-              trend="User interaction level"
-            />
-          </div>
-        )}
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -415,7 +245,7 @@ const Dashboard: React.FC = () => {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
               <TrendingUp className="h-5 w-5 mr-2 text-indigo-500" />
-              Progress Velocity Trend
+              Progress Velocity
             </h3>
             <Suspense
               fallback={
@@ -434,11 +264,11 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* AI Insights - Enhanced with dual-source data */}
+        {/* AI Insights */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-8">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
             <Zap className="h-5 w-5 mr-2 text-yellow-500" />
-            AI-Powered Insights (Enhanced)
+            AI-Powered Insights
           </h3>
           <div className="space-y-3">
             {analytics?.insights?.map((insight, index) => (
@@ -479,8 +309,6 @@ const Dashboard: React.FC = () => {
             description="Ask the chatbot for optimal study suggestions"
             icon={<Brain className="h-6 w-6" />}
             onClick={() => {
-              // Track this interaction for analytics
-              analyticsService.reportChatbotInteraction("get_recommendation");
               // This will trigger the chatbot with a specific message
               const chatEvent = new CustomEvent("open-chatbot", {
                 detail: { message: "What should I study next?" },

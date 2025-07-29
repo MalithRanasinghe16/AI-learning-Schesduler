@@ -352,6 +352,19 @@ class BackendClient:
         except Exception as e:
             logger.error(f"Error fetching today's sessions: {e}")
             return []
+    
+    async def get_analytics(self, user_id: str, auth_token: str) -> Optional[Dict[str, Any]]:
+        """Get user analytics data from backend"""
+        try:
+            response = await self.make_request(
+                'GET',
+                '/analytics/dashboard',
+                auth_token=auth_token
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Error fetching analytics for user {user_id}: {e}")
+            return None
 
 # Utility function to handle datetime serialization
 from datetime import timedelta
