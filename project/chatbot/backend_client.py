@@ -29,7 +29,7 @@ class BackendClient:
         """Check if the backend is available"""
         try:
             session = await self.get_session()
-            async with session.get(f"{self.base_url.replace('/api', '')}/health") as response:
+            async with session.get(f"{self.base_url}/health") as response:
                 return response.status == 200
         except Exception as e:
             logger.error(f"Backend health check failed: {e}")

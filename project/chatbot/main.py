@@ -403,6 +403,11 @@ async def generate_response(
     if any(keyword in message.lower() for keyword in feedback_keywords):
         return await handle_feedback_collection_request(user_id, message, user_data)
     
+    # Check for schedule selection messages (e.g., "Show sessions for Mathematics Schedule")
+    if "show sessions for" in message_lower:
+        schedule_name = message_lower.replace("show sessions for", "").strip()
+        return await handle_schedule_selection(schedule_name, user_data, conversation_id)
+
     # Handle different intents if no specific flow detected
     if intent == 'create_schedule':
         return await start_create_schedule_flow(user_id, user_data)
@@ -977,7 +982,7 @@ async def handle_get_schedule_intent(entities, user_data, conversation_id, confi
     """Handle schedule retrieval requests"""
     try:
         # Get user's current schedules
-        schedules = await backend_client.get_user_schedules(user_data['user_id'])
+        schedules = await backend_client.get_user_schedules(user_data['user_id'], user_data.get('token', ''))
         
         if not schedules:
             return ChatResponse(
@@ -998,33 +1003,233 @@ async def handle_get_schedule_intent(entities, user_data, conversation_id, confi
                 ]
             )
         
+        # Filter for active schedules only
         active_schedules = [s for s in schedules if s.get('status') == 'active']
         
-        if active_schedules:
-            schedule_info = f"You have {len(active_schedules)} active schedule(s). "
-            if len(active_schedules) == 1:
-                schedule_info += f"Your current schedule '{active_schedules[0]['name']}' has {len(active_schedules[0].get('sessions', []))} study sessions."
-            
+        if not active_schedules:
+            total_schedules = len(schedules)
             return ChatResponse(
-                response=schedule_info + " Would you like me to show you the details?",
+                response=f"You have {total_schedules} schedule(s) but none are currently active. Would you like to see all schedules or create a new one?",
                 intent='get_schedule',
                 confidence=confidence,
                 entities=entities,
-                actions=[{'type': 'show_schedule_details', 'schedules': active_schedules}],
-                conversation_id=conversation_id
+                conversation_id=conversation_id,
+                quick_actions=[
+                    {"id": "view-all", "label": "View All Schedules", "icon": "eye", "message": "Go to schedule page to view all schedules", "color": "bg-blue-500"},
+                    {"id": "create-new", "label": "Create New", "icon": "plus", "message": "Create a new study schedule", "color": "bg-green-500"}
+                ],
+                suggestions=[
+                    "Go to schedule page to view all schedules", 
+                    "Create a new active schedule"
+                ]
+            )
+        
+        if len(active_schedules) == 1:
+            # Single active schedule - show details and sessions
+            schedule = active_schedules[0]
+            schedule_id = schedule.get('_id')
+            
+            # Get sessions for this schedule
+            sessions = await backend_client.get_schedule_sessions(schedule_id, user_data.get('token', ''))
+            
+            # Filter for active/pending sessions
+            active_sessions = [s for s in sessions if s.get('status') in ['scheduled', 'in_progress']]
+            completed_sessions = [s for s in sessions if s.get('status') == 'completed']
+            
+            response_text = f"📅 **{schedule['name']}**\n\n"
+            response_text += f"📊 **Progress:** {len(completed_sessions)}/{len(sessions)} sessions completed\n\n"
+            
+            if active_sessions:
+                response_text += f"🎯 **Active Sessions ({len(active_sessions)}):**\n"
+                for i, session in enumerate(active_sessions[:3], 1):  # Show max 3 sessions
+                    subject = session.get('subjectName', 'Unknown Subject')
+                    start_time = session.get('startTime', '')
+                    status = session.get('status', 'scheduled').title()
+                    response_text += f"{i}. {subject} - {status}\n"
+                
+                if len(active_sessions) > 3:
+                    response_text += f"   ... and {len(active_sessions) - 3} more sessions\n"
+            else:
+                response_text += "✅ All sessions completed for this schedule!\n"
+            
+            response_text += f"\n💡 To view all schedules, visit the Schedule page."
+            
+            return ChatResponse(
+                response=response_text,
+                intent='get_schedule',
+                confidence=confidence,
+                entities=entities,
+                actions=[{'type': 'show_schedule_sessions', 'schedule': schedule, 'sessions': active_sessions}],
+                conversation_id=conversation_id,
+                quick_actions=[
+                    {"id": "view-all-schedules", "label": "All Schedules", "icon": "calendar", "message": "Go to schedule page", "color": "bg-blue-500"},
+                    {"id": "start-session", "label": "Start Session", "icon": "play", "message": "Start a study session", "color": "bg-green-500"}
+                ],
+                suggestions=[
+                    "Go to schedule page",
+                    "Start next study session",
+                    "Update session status"
+                ]
+            )
+        
+        else:
+            # Multiple active schedules - show list for selection
+            response_text = f"You have {len(active_schedules)} active schedules:\n\n"
+            
+            schedule_options = []
+            for i, schedule in enumerate(active_schedules, 1):
+                schedule_name = schedule.get('name', f'Schedule {i}')
+                created_date = schedule.get('createdAt', '')
+                response_text += f"{i}. **{schedule_name}**"
+                if created_date:
+                    try:
+                        date_obj = datetime.fromisoformat(created_date.replace('Z', '+00:00'))
+                        response_text += f" (Created: {date_obj.strftime('%b %d, %Y')})"
+                    except:
+                        pass
+                response_text += "\n"
+                
+                # Add quick action for each schedule
+                schedule_options.append({
+                    "id": f"select-schedule-{schedule.get('_id')}", 
+                    "label": f"{schedule_name[:15]}...", 
+                    "icon": "calendar", 
+                    "message": f"Show sessions for {schedule_name}", 
+                    "color": "bg-purple-500"
+                })
+            
+            response_text += f"\n💡 Select a schedule to view its active sessions.\n"
+            response_text += f"📋 To manage all schedules, visit the Schedule page."
+            
+            return ChatResponse(
+                response=response_text,
+                intent='get_schedule',
+                confidence=confidence,
+                entities=entities,
+                actions=[{'type': 'select_schedule', 'schedules': active_schedules}],
+                conversation_id=conversation_id,
+                quick_actions=schedule_options[:4] + [  # Limit to 4 schedule options plus navigation
+                    {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+                ],
+                suggestions=[
+                    "Go to schedule page",
+                    "Show me the most recent schedule",
+                    "Which schedule should I work on today?"
+                ]
             )
         
     except Exception as e:
         logger.error(f"Error fetching schedules: {e}")
-    
-    return ChatResponse(
-        response="Let me check your current schedules for you.",
-        intent='get_schedule',
-        confidence=confidence,
-        entities=entities,
-        actions=[{'type': 'fetch_schedules'}],
-        conversation_id=conversation_id
-    )
+        return ChatResponse(
+            response="I'm having trouble accessing your schedules right now. Please try again or visit the Schedule page directly.",
+            intent='get_schedule',
+            confidence=confidence,
+            entities=entities,
+            actions=[{'type': 'error_fetching_schedules'}],
+            conversation_id=conversation_id,
+            quick_actions=[
+                {"id": "retry-schedules", "label": "Try Again", "icon": "refresh", "message": "view my schedule", "color": "bg-orange-500"},
+                {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+            ],
+            suggestions=[
+                "Try again",
+                "Go to schedule page"
+            ]
+        )
+
+async def handle_schedule_selection(schedule_name, user_data, conversation_id):
+    """Handle when user selects a specific schedule to view sessions"""
+    try:
+        # Get user's schedules to find the selected one
+        schedules = await backend_client.get_user_schedules(user_data['user_id'], user_data.get('token', ''))
+        
+        # Find the selected schedule
+        selected_schedule = None
+        for schedule in schedules:
+            if schedule.get('name') == schedule_name or schedule_name in schedule.get('name', ''):
+                selected_schedule = schedule
+                break
+        
+        if not selected_schedule:
+            return ChatResponse(
+                response=f"I couldn't find the schedule '{schedule_name}'. Would you like to see all your schedules?",
+                intent='schedule_selection',
+                confidence=0.9,
+                entities={'schedule_name': schedule_name},
+                conversation_id=conversation_id,
+                quick_actions=[
+                    {"id": "view-schedules", "label": "View Schedules", "icon": "calendar", "message": "view my schedules", "color": "bg-blue-500"},
+                    {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+                ]
+            )
+        
+        # Get sessions for the selected schedule
+        schedule_id = selected_schedule.get('_id')
+        sessions = await backend_client.get_schedule_sessions(schedule_id, user_data.get('token', ''))
+        
+        # Filter sessions by status
+        active_sessions = [s for s in sessions if s.get('status') in ['scheduled', 'in_progress']]
+        completed_sessions = [s for s in sessions if s.get('status') == 'completed']
+        
+        # Build response
+        response_text = f"📅 **{selected_schedule['name']}**\n\n"
+        response_text += f"📊 **Progress:** {len(completed_sessions)}/{len(sessions)} sessions completed\n\n"
+        
+        if active_sessions:
+            response_text += f"🎯 **Active Sessions ({len(active_sessions)}):**\n"
+            for i, session in enumerate(active_sessions, 1):
+                subject = session.get('subjectName', 'Unknown Subject')
+                start_time = session.get('startTime', '')
+                status = session.get('status', 'scheduled').title()
+                
+                # Format time if available
+                time_str = ""
+                if start_time:
+                    try:
+                        time_obj = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                        time_str = f" at {time_obj.strftime('%I:%M %p')}"
+                    except:
+                        pass
+                
+                response_text += f"{i}. **{subject}** - {status}{time_str}\n"
+        else:
+            response_text += "✅ **All sessions completed!** Great job!\n"
+        
+        response_text += f"\n💡 **Want to see all schedules?** Visit the Schedule page for complete schedule management."
+        
+        return ChatResponse(
+            response=response_text,
+            intent='schedule_selection',
+            confidence=0.95,
+            entities={'schedule_name': schedule_name, 'schedule_id': schedule_id},
+            actions=[{'type': 'show_schedule_sessions', 'schedule': selected_schedule, 'sessions': active_sessions}],
+            conversation_id=conversation_id,
+            quick_actions=[
+                {"id": "start-session", "label": "Start Session", "icon": "play", "message": "Start next study session", "color": "bg-green-500"},
+                {"id": "view-all-schedules", "label": "All Schedules", "icon": "calendar", "message": "view my schedules", "color": "bg-blue-500"},
+                {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+            ],
+            suggestions=[
+                "Start next study session",
+                "View all my schedules", 
+                "Go to schedule page",
+                "Mark session as completed"
+            ]
+        )
+        
+    except Exception as e:
+        logger.error(f"Error handling schedule selection: {e}")
+        return ChatResponse(
+            response="I'm having trouble loading the schedule details. Please try again or visit the Schedule page.",
+            intent='schedule_selection',
+            confidence=0.8,
+            entities={'schedule_name': schedule_name},
+            conversation_id=conversation_id,
+            quick_actions=[
+                {"id": "retry-selection", "label": "Try Again", "icon": "refresh", "message": f"Show sessions for {schedule_name}", "color": "bg-orange-500"},
+                {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+            ]
+        )
 
 async def handle_general_question_intent(message, user_data, conversation_id, confidence):
     """Handle general questions and greetings"""

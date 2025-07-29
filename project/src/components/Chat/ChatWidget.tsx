@@ -414,9 +414,59 @@ How can I assist you today? 🚀`,
       ? messages[messages.length - 1]?.quickActions || defaultQuickActions
       : defaultQuickActions;
 
-  // Get current suggestions from latest bot message
-  const currentSuggestions =
-    messages.length > 0 ? messages[messages.length - 1]?.suggestions || [] : [];
+  // Get current suggestions from latest bot message, but filter out duplicates
+  const currentSuggestions = (() => {
+    if (messages.length === 0) return [];
+
+    const lastMessage = messages[messages.length - 1];
+    const rawSuggestions = lastMessage?.suggestions || [];
+
+    // Get the text content of current quick actions for comparison
+    const quickActionTexts = currentQuickActions.map((action) =>
+      action.message.toLowerCase().trim()
+    );
+
+    // Define common action keywords to avoid duplication
+    const actionKeywords = [
+      ["add", "subject"],
+      ["new", "subject"],
+      ["create", "schedule"],
+      ["generate", "schedule"],
+      ["make", "schedule"],
+      ["show", "progress"],
+      ["view", "progress"],
+      ["my", "progress"],
+      ["progress"],
+      ["recommendation"],
+      ["suggest"],
+      ["what", "study"],
+      ["study", "next"],
+    ];
+
+    // Filter out suggestions that match quick action functionality
+    const filteredSuggestions = rawSuggestions.filter((suggestion) => {
+      const suggestionLower = suggestion.toLowerCase().trim();
+
+      // Check if suggestion matches any quick action text directly
+      const matchesQuickAction = quickActionTexts.some(
+        (actionText) =>
+          actionText.includes(suggestionLower) ||
+          suggestionLower.includes(actionText)
+      );
+
+      if (matchesQuickAction) return false;
+
+      // Check if suggestion contains action keywords that match quick actions
+      const containsActionKeywords = actionKeywords.some((keywords) =>
+        keywords.every((keyword) => suggestionLower.includes(keyword))
+      );
+
+      // Only include suggestions that don't duplicate quick action functionality
+      return !containsActionKeywords;
+    });
+
+    return filteredSuggestions;
+  })();
 
   return (
     <>
@@ -433,7 +483,7 @@ How can I assist you today? 🚀`,
 
       {/* Chat Widget */}
       {isOpen && (
-        <div className="fixed bottom-6 right-6 z-50 w-96 h-[600px] bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col animate-slide-up md:w-96 sm:w-full sm:h-full sm:bottom-0 sm:right-0 sm:rounded-none">
+        <div className="fixed bottom-6 right-6 z-50 w-[500px] h-[650px] bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col animate-slide-up md:w-[500px] sm:w-full sm:h-full sm:bottom-0 sm:right-0 sm:rounded-none">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white rounded-t-lg">
             <div className="flex items-center">

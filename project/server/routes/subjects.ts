@@ -1,6 +1,7 @@
-import express, { Response } from "express";
+import express, { Request, Response } from "express";
 import Subject from "../models/Subject";
 import ScheduleSession from "../models/ScheduleSession";
+import Schedule from "../models/Schedule";
 import { authenticateToken, AuthRequest } from "../middleware/auth";
 import { validateSubject } from "../middleware/validation";
 
@@ -263,6 +264,353 @@ router.patch(
     } catch (error) {
       console.error("❌ Update progress error:", error);
       res.status(500).json({ message: "Internal server error" });
+    }
+  }
+);
+
+// Get schedules affected by subject deletion
+router.get(
+  "/:id/affected-schedules",
+  authenticateToken,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const subjectId = req.params.id;
+
+      console.log("🔍 Finding affected schedules for subject:", subjectId);
+
+      // Find schedule sessions that contain this subject
+      const scheduleSessions = await ScheduleSession.find({
+        subjectId: subjectId,
+      });
+
+      console.log("📅 Found schedule sessions:", scheduleSessions.length);
+
+      if (scheduleSessions.length === 0) {
+        res.json({
+          schedules: [],
+          count: 0,
+        });
+        return;
+      }
+
+      // Get unique schedule IDs
+      const uniqueScheduleIds = [
+        ...new Set(
+          scheduleSessions.map((session) => session.scheduleId.toString())
+        ),
+      ];
+
+      console.log("📋 Unique schedule IDs:", uniqueScheduleIds);
+
+      // Find all schedules that contain this subject and belong to the user
+      const affectedSchedules = await Schedule.find({
+        _id: { $in: uniqueScheduleIds },
+        userId: req.user!._id,
+      });
+
+      console.log("✅ Found affected schedules:", affectedSchedules.length);
+
+      // Add session data to each schedule
+      const schedulesWithSessions = affectedSchedules.map((schedule) => {
+        const sessions = scheduleSessions.filter(
+          (session) => session.scheduleId.toString() === schedule._id.toString()
+        );
+
+        return {
+          ...schedule.toJSON(),
+          blocks: sessions,
+        };
+      });
+
+      res.json({
+        schedules: schedulesWithSessions,
+        count: affectedSchedules.length,
+      });
+    } catch (error) {
+      console.error("❌ Error finding affected schedules:", error);
+      res.status(500).json({
+        message: "Internal server error",
+        error: error.message || "Unknown error",
+      });
+    }
+  }
+);
+
+// Enhanced delete with schedule adjustment
+router.delete(
+  "/:id/with-schedule-adjustment",
+  authenticateToken,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const subjectId = req.params.id;
+      const userId = req.user!._id;
+
+      // First, verify subject exists and belongs to user
+      const subject = await Subject.findOne({
+        _id: subjectId,
+        userId: userId,
+      });
+
+      if (!subject) {
+        res.status(404).json({ message: "Subject not found" });
+        return;
+      }
+
+      // Find all active schedules that contain this subject
+      const affectedSchedules = await Schedule.find({
+        userId: userId,
+        status: { $nin: ["completed", "archived"] },
+      });
+
+      // Find schedule sessions for this subject in active schedules
+      const affectedScheduleSessions = await ScheduleSession.find({
+        subjectId: subjectId,
+        scheduleId: { $in: affectedSchedules.map((s) => s._id) },
+        status: { $nin: ["completed"] },
+      });
+
+      const adjustmentSummary: any = {};
+
+      // Group sessions by schedule
+      const sessionsBySchedule = new Map();
+      affectedScheduleSessions.forEach((session) => {
+        const scheduleId = session.scheduleId.toString();
+        if (!sessionsBySchedule.has(scheduleId)) {
+          sessionsBySchedule.set(scheduleId, []);
+        }
+        sessionsBySchedule.get(scheduleId).push(session);
+      });
+
+      // Process each affected schedule
+      for (const schedule of affectedSchedules) {
+        const scheduleId = schedule._id.toString();
+        const subjectSessions = sessionsBySchedule.get(scheduleId) || [];
+
+        if (subjectSessions.length === 0) continue;
+
+        // Calculate total time to redistribute
+        const totalMinutesToRedistribute = subjectSessions.reduce(
+          (total, session) => total + (session.duration || 0),
+          0
+        );
+
+        // Get remaining subjects in this schedule
+        const remainingScheduleSessions = await ScheduleSession.find({
+          scheduleId: schedule._id,
+          subjectId: { $ne: subjectId },
+          status: { $nin: ["completed"] },
+        });
+
+        const remainingSubjectIds = [
+          ...new Set(
+            remainingScheduleSessions.map((session) =>
+              session.subjectId.toString()
+            )
+          ),
+        ];
+
+        if (remainingSubjectIds.length === 0) {
+          // No remaining subjects, just delete the subject sessions
+          await ScheduleSession.deleteMany({
+            scheduleId: schedule._id,
+            subjectId: subjectId,
+          });
+        } else {
+          // Get subject details for weighting calculation
+          const remainingSubjects = await Subject.find({
+            _id: { $in: remainingSubjectIds },
+            userId: userId,
+          });
+
+          // Calculate distribution weights based on priority, remaining hours, and progress
+          const subjectWeights = remainingSubjects.map((subj) => {
+            const priorityWeight =
+              subj.priority === "high" ? 3 : subj.priority === "medium" ? 2 : 1;
+            const remainingHours = Math.max(
+              0,
+              (subj.estimatedHours || 0) -
+                (subj.progress / 100) * (subj.estimatedHours || 0)
+            );
+            const progressWeight = Math.max(0.1, (100 - subj.progress) / 100); // Less progress = more weight
+
+            return {
+              subjectId: subj._id.toString(),
+              weight: priorityWeight * (remainingHours + 1) * progressWeight,
+              name: subj.name,
+            };
+          });
+
+          const totalWeight = subjectWeights.reduce(
+            (sum, w) => sum + w.weight,
+            0
+          );
+
+          // Redistribute time proportionally
+          const redistributionMap = new Map();
+          subjectWeights.forEach((sw) => {
+            const additionalMinutes = Math.round(
+              (sw.weight / totalWeight) * totalMinutesToRedistribute
+            );
+            redistributionMap.set(sw.subjectId, additionalMinutes);
+          });
+
+          // Delete subject sessions
+          await ScheduleSession.deleteMany({
+            scheduleId: schedule._id,
+            subjectId: subjectId,
+          });
+
+          // Extend remaining subjects' sessions
+          for (const subjectId of remainingSubjectIds) {
+            const additionalMinutes = redistributionMap.get(subjectId) || 0;
+            if (additionalMinutes > 0) {
+              const subjectSessions = await ScheduleSession.find({
+                scheduleId: schedule._id,
+                subjectId: subjectId,
+                status: { $nin: ["completed"] },
+              });
+
+              if (subjectSessions.length > 0) {
+                const distributionPerSession = Math.ceil(
+                  additionalMinutes / subjectSessions.length
+                );
+
+                for (const session of subjectSessions) {
+                  session.duration =
+                    (session.duration || 0) + distributionPerSession;
+
+                  // Update end time
+                  if (session.startTime) {
+                    const endTime = new Date(
+                      session.startTime.getTime() + session.duration * 60000
+                    );
+                    session.endTime = endTime;
+                  }
+
+                  await session.save();
+                }
+              }
+            }
+          }
+
+          // Store adjustment summary
+          adjustmentSummary[scheduleId] = {
+            redistributedHours: totalMinutesToRedistribute / 60,
+            affectedSubjects: remainingSubjectIds.length,
+            redistributionDetails: subjectWeights.map((sw) => ({
+              subject: sw.name,
+              additionalMinutes: redistributionMap.get(sw.subjectId) || 0,
+            })),
+          };
+        }
+
+        // Update schedule end date if needed
+        const lastSession = await ScheduleSession.findOne({
+          scheduleId: schedule._id,
+        }).sort({ endTime: -1 });
+
+        if (lastSession) {
+          schedule.endDate = lastSession.endTime;
+          await schedule.save();
+        }
+      }
+
+      // Delete the subject
+      await Subject.findByIdAndDelete(subjectId);
+
+      // Also delete any remaining schedule sessions for this subject
+      await ScheduleSession.deleteMany({ subjectId: subjectId });
+
+      res.json({
+        message: "Subject deleted and schedules adjusted successfully",
+        adjustmentSummary,
+        affectedSchedules: affectedSchedules.length,
+      });
+    } catch (error) {
+      console.error("Error in enhanced subject deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  }
+);
+
+// Complete all remaining sessions for a subject when it's marked as completed
+router.patch(
+  "/:id/complete-sessions",
+  authenticateToken,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const { id: subjectId } = req.params;
+      console.log(
+        "🎯 Completing all remaining sessions for subject:",
+        subjectId
+      );
+
+      // Find all non-completed sessions for this subject
+      const remainingSessions = await ScheduleSession.find({
+        subjectId: subjectId,
+        status: { $ne: "completed" },
+      });
+
+      console.log(
+        `📅 Found ${remainingSessions.length} remaining sessions to complete`
+      );
+
+      if (remainingSessions.length === 0) {
+        res.json({
+          message: "No remaining sessions to complete",
+          completedSessions: 0,
+        });
+        return;
+      }
+
+      // Mark all remaining sessions as completed
+      const updateResult = await ScheduleSession.updateMany(
+        {
+          subjectId: subjectId,
+          status: { $ne: "completed" },
+        },
+        {
+          $set: {
+            status: "completed",
+            completionPercentage: 100,
+          },
+        }
+      );
+
+      console.log(
+        `✅ Marked ${updateResult.modifiedCount} sessions as completed`
+      );
+
+      // Update the subject to be completed
+      await Subject.findByIdAndUpdate(subjectId, {
+        progress: 100,
+        isCompleted: true,
+      });
+
+      // Get affected schedules for response
+      const affectedSchedules = await Promise.all(
+        [
+          ...new Set(remainingSessions.map((session) => session.scheduleId)),
+        ].map(async (scheduleId) => {
+          const schedule = await Schedule.findById(scheduleId);
+          return schedule ? { _id: schedule._id, name: schedule.name } : null;
+        })
+      );
+
+      const validAffectedSchedules = affectedSchedules.filter(
+        (schedule) => schedule !== null
+      );
+
+      res.json({
+        message: "All remaining sessions marked as completed",
+        completedSessions: updateResult.modifiedCount,
+        affectedSchedules: validAffectedSchedules,
+      });
+    } catch (error) {
+      console.error("Error completing subject sessions:", error);
+      res
+        .status(500)
+        .json({ message: "Internal server error", error: error.message });
     }
   }
 );

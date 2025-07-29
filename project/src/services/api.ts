@@ -107,6 +107,32 @@ export const apiService = {
     const response = await api.delete(`/subjects/${id}`);
     return response.data;
   },
+
+  // Enhanced delete with schedule adjustment
+  deleteSubjectWithScheduleAdjustment: async (id: string) => {
+    const response = await api.delete(
+      `/subjects/${id}/with-schedule-adjustment`
+    );
+    return response.data;
+  },
+
+  // Get schedules affected by subject deletion
+  getAffectedSchedulesBySubject: async (
+    subjectId: string
+  ): Promise<{ schedules: Schedule[] }> => {
+    const response = await api.get<{ schedules: Schedule[] }>(
+      `/subjects/${subjectId}/affected-schedules`
+    );
+    return response.data;
+  },
+
+  // Complete all remaining sessions when subject is marked as completed
+  completeSubjectSessions: async (subjectId: string) => {
+    const response = await api.patch(
+      `/subjects/${subjectId}/complete-sessions`
+    );
+    return response.data;
+  },
   updateSubjectProgress: async (id, progress) => {
     const response = await api.patch(`/subjects/${id}/progress`, { progress });
     return response.data;

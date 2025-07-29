@@ -33,15 +33,24 @@ export interface Subject {
 export interface ScheduleBlock {
   _id: string;
   id: string;
-  subjectId: string;
-  subjectName: string;
-  time: string;
+  subjectId:
+    | string
+    | {
+        _id: string;
+        name: string;
+        difficulty: string;
+        priority: string;
+        category: string;
+      };
+  subjectName?: string;
+  time?: string;
   duration: number;
-  priority_score: number;
-  status: "scheduled" | "in-progress" | "completed" | "missed";
-  date: string;
-  startTime: string;
-  endTime: string;
+  priority_score?: number;
+  priority?: number; // For ScheduleSession compatibility
+  status: "scheduled" | "in-progress" | "completed" | "missed" | "rescheduled";
+  date?: string;
+  startTime: string | Date;
+  endTime: string | Date;
   sessionType: "study" | "review" | "practice" | "break";
   adaptationReason?: string;
 }
@@ -60,6 +69,7 @@ export interface Schedule {
   createdAt?: string;
   updatedAt?: string;
   sessions?: ScheduleBlock[]; // Legacy compatibility
+  status?: "active" | "completed" | "archived"; // Added status property
 }
 
 export interface Analytics {
