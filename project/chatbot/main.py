@@ -1151,6 +1151,9 @@ async def handle_progress_request(user_data, conversation_id):
         # Get analytics data from the backend
         analytics_data = await backend_client.get_analytics(user_data['user_id'], user_data.get('token', ''))
         
+        # Check user's preference for daily/weekly view (could be passed as parameter or stored)
+        # For now, we'll provide both views or make it smart based on the data
+        
         if not analytics_data:
             return ChatResponse(
                 response="📊 **Your Study Progress Dashboard**\n\n"
@@ -1173,9 +1176,10 @@ async def handle_progress_request(user_data, conversation_id):
                 quick_actions=[
                     {"id": "add-subject", "label": "📝 Add Subject", "icon": "plus", "message": "add subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
                     {"id": "create-schedule", "label": "📅 Create Schedule", "icon": "calendar", "message": "create schedule", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                    {"id": "daily-view", "label": "📅 Daily View", "icon": "calendar", "message": "show my daily progress", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
                     {"id": "main-menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
                 ],
-                suggestions=["Add my first subject", "Create study schedule", "Main menu"]
+                suggestions=["Add my first subject", "Create study schedule", "Show daily progress", "Main menu"]
             )
         
         # Extract key metrics from analytics
@@ -1186,19 +1190,33 @@ async def handle_progress_request(user_data, conversation_id):
         total_sessions = weekly_stats.get('totalSessions', 0)
         completion_rate = weekly_stats.get('completionRate', 0)
         average_focus = weekly_stats.get('averageFocus', 0)
+        daily_study_time = weekly_stats.get('dailyStudyTime', [0, 0, 0, 0, 0, 0, 0])
+        
+        # Calculate daily analytics
+        today_index = (datetime.now().weekday()) % 7  # Monday = 0
+        todays_study_time = daily_study_time[today_index] if len(daily_study_time) > today_index else 0
+        daily_goal = 120  # 2 hours in minutes
         
         # Convert minutes to hours for display
         study_hours = total_study_time / 60 if total_study_time > 0 else 0
+        todays_hours = todays_study_time / 60 if todays_study_time > 0 else 0
         
         # Calculate daily average
         daily_average = study_hours / 7 if study_hours > 0 else 0
         
-        # Build comprehensive progress report
+        # Build comprehensive progress report with both daily and weekly insights
         response_text = "📊 **Your Study Progress Dashboard**\n\n"
         
-        # Current week summary
+        # Today's Snapshot
+        response_text += "📅 **Today's Snapshot:**\n"
+        response_text += f"⏰ **Study Time Today:** {todays_hours:.1f} hours\n"
+        response_text += f"🎯 **Daily Goal Progress:** {min(100, (todays_study_time / daily_goal) * 100):.0f}%\n"
+        time_remaining = max(0, daily_goal - todays_study_time)
+        response_text += f"⏳ **Time to Goal:** {time_remaining // 60}h {time_remaining % 60}m remaining\n\n"
+        
+        # Weekly Overview
         response_text += "📈 **This Week's Performance:**\n"
-        response_text += f"⏱️ **Study Time:** {study_hours:.1f} hours ({daily_average:.1f}h/day)\n"
+        response_text += f"⏱️ **Total Study Time:** {study_hours:.1f} hours ({daily_average:.1f}h/day)\n"
         response_text += f"📚 **Sessions:** {total_sessions} completed\n"
         response_text += f"🎯 **Completion Rate:** {completion_rate:.0f}%\n"
         response_text += f"🧠 **Focus Score:** {average_focus:.1f}/10\n\n"
@@ -1224,6 +1242,13 @@ async def handle_progress_request(user_data, conversation_id):
         # Performance insights and recommendations
         response_text += "💡 **Insights & Recommendations:**\n"
         
+        # Daily-specific insights
+        if todays_study_time > 0:
+            response_text += f"🌟 You've studied {todays_hours:.1f} hours today - great progress!\n"
+        else:
+            response_text += "📚 Ready to start your first study session today?\n"
+        
+        # Weekly patterns
         if completion_rate >= 80:
             response_text += "🎉 Excellent consistency! You're crushing your study goals.\n"
         elif completion_rate >= 60:
@@ -1238,13 +1263,6 @@ async def handle_progress_request(user_data, conversation_id):
         elif average_focus > 0:
             response_text += "📱 Try reducing distractions to improve focus scores.\n"
         
-        if study_hours >= 20:
-            response_text += "⭐ Impressive study dedication this week!\n"
-        elif study_hours >= 10:
-            response_text += "📈 Good study time management.\n"
-        elif study_hours > 0:
-            response_text += "⏰ Consider increasing daily study time for better results.\n"
-        
         # Add motivational closing
         if total_sessions > 0:
             response_text += f"\n🚀 **Keep it up!** You've built momentum with {total_sessions} sessions this week!"
@@ -1257,13 +1275,15 @@ async def handle_progress_request(user_data, conversation_id):
             actions=[],
             conversation_id=conversation_id,
             quick_actions=[
-                {"id": "detailed-analytics", "label": "📈 Detailed Analytics", "icon": "bar-chart", "message": "Show detailed analytics", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
-                {"id": "set-goals", "label": "🎯 Set Goals", "icon": "target", "message": "Help me set study goals", "color": "bg-purple-600 hover:bg-purple-700 text-white"},
+                {"id": "daily-focus", "label": "� Daily Focus", "icon": "calendar", "message": "show today's progress only", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
+                {"id": "weekly-trends", "label": "📊 Weekly Trends", "icon": "trending-up", "message": "show weekly analytics", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                {"id": "set-goals", "label": "🎯 Set Goals", "icon": "target", "message": "help me set study goals", "color": "bg-purple-600 hover:bg-purple-700 text-white"},
                 {"id": "study-recommendations", "label": "💡 Get Recommendations", "icon": "lightbulb", "message": "what should I study", "color": "bg-green-600 hover:bg-green-700 text-white"},
                 {"id": "main-menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
             ],
             suggestions=[
-                "Show detailed analytics",
+                "Show today's progress only",
+                "Show weekly analytics", 
                 "What should I study next?",
                 "Set study goals",
                 "Main menu"

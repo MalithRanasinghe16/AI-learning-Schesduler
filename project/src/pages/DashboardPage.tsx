@@ -35,6 +35,56 @@ const Dashboard: React.FC = () => {
   const [analytics, setAnalytics] = useState<EnhancedAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [isWeeklyView, setIsWeeklyView] = useState(() => {
+    // Load preference from localStorage, default to weekly view
+    const saved = localStorage.getItem("analytics-view-preference");
+    return saved ? JSON.parse(saved) : true;
+  });
+
+  // Save preference to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem(
+      "analytics-view-preference",
+      JSON.stringify(isWeeklyView)
+    );
+  }, [isWeeklyView]);
+
+  // Add keyboard shortcuts for development features
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      // Ctrl+R for refresh
+      if (event.ctrlKey && event.key === "r") {
+        event.preventDefault();
+        handleRefresh();
+      }
+      // Ctrl+T for test data
+      if (event.ctrlKey && event.key === "t") {
+        event.preventDefault();
+        createTestData();
+      }
+      // Ctrl+D for debug
+      if (event.ctrlKey && event.key === "d") {
+        event.preventDefault();
+        runDebugTest();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyPress);
+    return () => window.removeEventListener("keydown", handleKeyPress);
+  }, []);
+
+  // Debug test function
+  const runDebugTest = async () => {
+    try {
+      console.log("🧪 Running analytics debug test...");
+      const result = await testAnalytics();
+      setAnalytics(result);
+      toast.success("Analytics debug completed! Check console for details.");
+    } catch (error) {
+      console.error("❌ Debug failed:", error);
+      toast.error("Analytics debug failed. Check console for details.");
+    }
+  };
 
   // Fetch analytics data with enhanced dual-source integration
   const fetchAnalytics = async (showToast: boolean = false) => {
@@ -95,6 +145,25 @@ const Dashboard: React.FC = () => {
           averageResponseTime: 0,
           userEngagement: 0,
         },
+        dailyAnalytics: {
+          studyTime: 0,
+          sessionsCompleted: 0,
+          focusScore: 0,
+          completionRate: 0,
+          todaysGoal: 120,
+          streak: 0,
+          timeRemaining: 120,
+        },
+        weeklyAnalytics: {
+          totalStudyTime: 0,
+          totalSessions: 0,
+          averageFocus: 0,
+          weeklyGoal: 840,
+          dailyConsistency: [0, 0, 0, 0, 0, 0, 0],
+          bestDay: "Monday",
+          weeklyProgress: 0,
+          subjectDistribution: [],
+        },
         lastUpdated: new Date(),
         dataSource: {
           mainBackend: false,
@@ -115,7 +184,17 @@ const Dashboard: React.FC = () => {
       fetchAnalytics();
     }, 30000);
 
-    return () => clearInterval(interval);
+    // Listen for analytics refresh events from other components
+    const handleAnalyticsRefresh = () => {
+      fetchAnalytics(true);
+    };
+
+    window.addEventListener("analytics-refresh", handleAnalyticsRefresh);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("analytics-refresh", handleAnalyticsRefresh);
+    };
   }, []);
 
   // Manual refresh handler
@@ -227,7 +306,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-indigo-900 text-white">
       <div className="container mx-auto px-4 py-8">
-        {/* Header with Refresh Button */}
+        {/* Header */}
         <div className="mb-8 flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold mb-2">
@@ -237,120 +316,248 @@ const Dashboard: React.FC = () => {
               Here's your learning progress and quick actions for today.
             </p>
           </div>
-          <div className="flex items-center space-x-4">
-            <div className="text-sm text-gray-400">
-              Last updated: {lastRefresh.toLocaleTimeString()}
+          {/* Daily/Weekly Analytics Toggle - Compact Version */}
+          <div className="flex items-center space-x-3">
+            <span className="text-sm text-gray-400">View:</span>
+            <div className="flex items-center bg-gray-800/50 rounded-lg border border-gray-700 p-1">
+              <button
+                onClick={() => setIsWeeklyView(false)}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 ${
+                  !isWeeklyView
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                Daily
+              </button>
+              <button
+                onClick={() => setIsWeeklyView(true)}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 ${
+                  isWeeklyView
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                Weekly
+              </button>
             </div>
-            <button
-              onClick={handleRefresh}
-              className="flex items-center px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-colors"
-              disabled={loading}
-            >
-              <RefreshCw
-                className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </button>
-            {/* Create test data button (development only) */}
-            <button
-              onClick={createTestData}
-              className="flex items-center px-3 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors text-sm"
-            >
-              📊 Create Test Data
-            </button>
-            {/* Debug button for development */}
-            <button
-              onClick={async () => {
-                try {
-                  console.log("🧪 Running analytics debug test...");
-                  const result = await testAnalytics();
-                  setAnalytics(result);
-                  toast.success(
-                    "Analytics debug completed! Check console for details."
-                  );
-                } catch (error) {
-                  console.error("❌ Debug failed:", error);
-                  toast.error(
-                    "Analytics debug failed. Check console for details."
-                  );
-                }
-              }}
-              className="flex items-center px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors text-sm"
-            >
-              🧪 Debug
-            </button>
           </div>
         </div>
 
-        {/* Data Source Indicator */}
-        {analytics && (
-          <div className="mb-6 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
-            <div className="flex items-center space-x-4 text-sm">
-              <span className="text-gray-300">Data sources:</span>
-              <div
-                className={`flex items-center ${
-                  analytics.dataSource.mainBackend
-                    ? "text-green-400"
-                    : "text-red-400"
-                }`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full mr-2 ${
-                    analytics.dataSource.mainBackend
-                      ? "bg-green-400"
-                      : "bg-red-400"
-                  }`}
-                ></div>
-                Main Backend (Port 5000)
-              </div>
-              <div
-                className={`flex items-center ${
-                  analytics.dataSource.chatbot
-                    ? "text-green-400"
-                    : "text-red-400"
-                }`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full mr-2 ${
-                    analytics.dataSource.chatbot ? "bg-green-400" : "bg-red-400"
-                  }`}
-                ></div>
-                Chatbot (Port 8000)
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Enhanced Analytics Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <StatCard
-            title="Total Study Time"
-            value={`${analytics?.totalStudyTime?.toFixed(1) || 0}h`}
-            icon={<Clock className="h-6 w-6 text-white" />}
-            color="border-l-cyan-500"
-            trend="This week"
-          />
-          <StatCard
-            title="Completion Rate"
-            value={`${Math.round(analytics?.completionRate || 0)}%`}
-            icon={<Target className="h-6 w-6 text-white" />}
-            color="border-l-indigo-500"
-            trend="Enhanced with AI data"
-          />
-          <StatCard
-            title="Focus Score"
-            value={`${analytics?.focusScore?.toFixed(1) || 0}/10`}
-            icon={<Brain className="h-6 w-6 text-white" />}
-            color="border-l-purple-500"
-            trend="AI-enhanced metric"
-          />
-          <StatCard
-            title="Progress Velocity"
-            value={`${analytics?.progressVelocity?.toFixed(1) || 0}`}
-            icon={<TrendingUp className="h-6 w-6 text-white" />}
-            color="border-l-green-500"
-            trend="Sessions/day"
-          />
+          {isWeeklyView ? (
+            // Weekly View Stats
+            <>
+              <StatCard
+                title="Weekly Study Time"
+                value={`${(
+                  (analytics?.weeklyAnalytics?.totalStudyTime || 0) / 60
+                ).toFixed(1)}h`}
+                icon={<Clock className="h-6 w-6 text-white" />}
+                color="border-l-cyan-500"
+                trend={`Goal: ${(
+                  (analytics?.weeklyAnalytics?.weeklyGoal || 840) / 60
+                ).toFixed(1)}h`}
+              />
+              <StatCard
+                title="Weekly Progress"
+                value={`${Math.round(
+                  analytics?.weeklyAnalytics?.weeklyProgress || 0
+                )}%`}
+                icon={<Target className="h-6 w-6 text-white" />}
+                color="border-l-indigo-500"
+                trend="of weekly goal"
+              />
+              <StatCard
+                title="Average Focus"
+                value={`${(
+                  analytics?.weeklyAnalytics?.averageFocus || 0
+                ).toFixed(1)}/10`}
+                icon={<Brain className="h-6 w-6 text-white" />}
+                color="border-l-purple-500"
+                trend="This week"
+              />
+              <StatCard
+                title="Total Sessions"
+                value={`${analytics?.weeklyAnalytics?.totalSessions || 0}`}
+                icon={<TrendingUp className="h-6 w-6 text-white" />}
+                color="border-l-green-500"
+                trend={`Best: ${analytics?.weeklyAnalytics?.bestDay || "N/A"}`}
+              />
+            </>
+          ) : (
+            // Daily View Stats
+            <>
+              <StatCard
+                title="Today's Study Time"
+                value={`${(
+                  (analytics?.dailyAnalytics?.studyTime || 0) / 60
+                ).toFixed(1)}h`}
+                icon={<Clock className="h-6 w-6 text-white" />}
+                color="border-l-cyan-500"
+                trend={`Goal: ${(
+                  (analytics?.dailyAnalytics?.todaysGoal || 120) / 60
+                ).toFixed(1)}h`}
+              />
+              <StatCard
+                title="Daily Progress"
+                value={`${Math.round(
+                  analytics?.dailyAnalytics?.completionRate || 0
+                )}%`}
+                icon={<Target className="h-6 w-6 text-white" />}
+                color="border-l-indigo-500"
+                trend="of daily goal"
+              />
+              <StatCard
+                title="Today's Focus"
+                value={`${(analytics?.dailyAnalytics?.focusScore || 0).toFixed(
+                  1
+                )}/10`}
+                icon={<Brain className="h-6 w-6 text-white" />}
+                color="border-l-purple-500"
+                trend="Current session"
+              />
+              <StatCard
+                title="Study Streak"
+                value={`${analytics?.dailyAnalytics?.streak || 0} days`}
+                icon={<Award className="h-6 w-6 text-white" />}
+                color="border-l-orange-500"
+                trend={
+                  (analytics?.dailyAnalytics?.streak || 0) > 0
+                    ? "Keep it up!"
+                    : "Start today!"
+                }
+              />
+            </>
+          )}
+        </div>
+
+        {/* Daily/Weekly Specific Insights */}
+        <div className="mb-8">
+          {isWeeklyView ? (
+            // Weekly Insights
+            <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 rounded-lg p-6 border border-blue-500/20">
+              <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+                📊 Weekly Overview
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-black/20 rounded-lg p-4">
+                  <h4 className="text-blue-300 font-medium mb-2">
+                    Consistency
+                  </h4>
+                  <div className="flex items-center space-x-2">
+                    {analytics?.weeklyAnalytics?.dailyConsistency?.map(
+                      (time, index) => (
+                        <div
+                          key={index}
+                          className={`w-6 h-6 rounded ${
+                            time > 0 ? "bg-green-500" : "bg-gray-600"
+                          }`}
+                          title={`${
+                            ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][
+                              index
+                            ]
+                          }: ${(time / 60).toFixed(1)}h`}
+                        />
+                      )
+                    ) ||
+                      Array.from({ length: 7 }, (_, i) => (
+                        <div key={i} className="w-6 h-6 rounded bg-gray-600" />
+                      ))}
+                  </div>
+                  <p className="text-sm text-gray-400 mt-2">
+                    Daily study pattern
+                  </p>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4">
+                  <h4 className="text-green-300 font-medium mb-2">
+                    Best Performance
+                  </h4>
+                  <p className="text-2xl font-bold text-white">
+                    {analytics?.weeklyAnalytics?.bestDay || "N/A"}
+                  </p>
+                  <p className="text-sm text-gray-400">Best study day</p>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4">
+                  <h4 className="text-purple-300 font-medium mb-2">
+                    Goal Progress
+                  </h4>
+                  <div className="w-full bg-gray-700 rounded-full h-3 mb-2">
+                    <div
+                      className="bg-gradient-to-r from-purple-500 to-blue-500 h-3 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          analytics?.weeklyAnalytics?.weeklyProgress || 0
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-sm text-gray-400">
+                    {analytics?.weeklyAnalytics?.weeklyProgress?.toFixed(1) ||
+                      0}
+                    % of weekly goal
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            // Daily Insights
+            <div className="bg-gradient-to-r from-orange-900/30 to-red-900/30 rounded-lg p-6 border border-orange-500/20">
+              <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+                📅 Today's Focus
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-black/20 rounded-lg p-4">
+                  <h4 className="text-orange-300 font-medium mb-2">
+                    Time Remaining
+                  </h4>
+                  <p className="text-2xl font-bold text-white">
+                    {Math.floor(
+                      (analytics?.dailyAnalytics?.timeRemaining || 0) / 60
+                    )}
+                    h {(analytics?.dailyAnalytics?.timeRemaining || 0) % 60}m
+                  </p>
+                  <p className="text-sm text-gray-400">To reach daily goal</p>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4">
+                  <h4 className="text-yellow-300 font-medium mb-2">
+                    Sessions Today
+                  </h4>
+                  <p className="text-2xl font-bold text-white">
+                    {analytics?.dailyAnalytics?.sessionsCompleted || 0}
+                  </p>
+                  <p className="text-sm text-gray-400">Completed sessions</p>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4">
+                  <h4 className="text-red-300 font-medium mb-2">
+                    Current Streak
+                  </h4>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-2xl">🔥</span>
+                    <span className="text-2xl font-bold text-white">
+                      {analytics?.dailyAnalytics?.streak || 0}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-400">
+                    Consecutive study days
+                  </p>
+                </div>
+              </div>
+              {analytics?.dailyAnalytics?.bestSubjectToday && (
+                <div className="mt-4 bg-black/20 rounded-lg p-4">
+                  <h4 className="text-green-300 font-medium mb-2">
+                    📚 Best Subject Today
+                  </h4>
+                  <p className="text-lg font-semibold text-white">
+                    {analytics.dailyAnalytics.bestSubjectToday}
+                  </p>
+                  <p className="text-sm text-gray-400">Most progress made</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Chatbot Analytics Section */}

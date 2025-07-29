@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import {
   Calendar,
   Clock,
-  Plus,
   Edit3,
   Check,
   X,
@@ -11,7 +10,6 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Brain,
   Star,
   Target,
   Trash2,
@@ -34,14 +32,6 @@ const SchedulePage: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>("active");
   const [filterCompletion, setFilterCompletion] = useState<string>("active"); // New filter for completed schedules
   const [searchTerm, setSearchTerm] = useState("");
-  const [showManualForm, setShowManualForm] = useState(false);
-  const [manualForm, setManualForm] = useState({
-    name: "",
-    subjectIds: [] as string[],
-    start_date: "",
-    end_date: "",
-    daily_hours: 4,
-  });
 
   // Fetch schedules and subjects
   useEffect(() => {
@@ -399,44 +389,14 @@ const SchedulePage: React.FC = () => {
       }
 
       toast.success(`Session marked as ${newStatus}`);
+
+      // Trigger analytics refresh when session is completed
+      if (newStatus === "completed") {
+        window.dispatchEvent(new CustomEvent("analytics-refresh"));
+      }
     } catch (error) {
       console.error("Error updating session status:", error);
       toast.error("Failed to update session status");
-    }
-  };
-
-  const createManualSchedule = async () => {
-    try {
-      const response = await fetch("http://localhost:5000/api/schedules", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...manualForm,
-          created_by: "manual",
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to create schedule");
-      }
-
-      const newSchedule = await response.json();
-      setSchedules((prev) => [newSchedule, ...prev]);
-      setShowManualForm(false);
-      setManualForm({
-        name: "",
-        subjectIds: [],
-        start_date: "",
-        end_date: "",
-        daily_hours: 4,
-      });
-      toast.success("Manual schedule created successfully!");
-    } catch (error) {
-      console.error("Error creating schedule:", error);
-      toast.error("Failed to create schedule");
     }
   };
 
@@ -541,34 +501,6 @@ const SchedulePage: React.FC = () => {
             Manage your AI-generated and manual study schedules. Track your
             session progress.
           </p>
-        </div>
-
-        {/* Chatbot Notice and Manual Creation */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div className="bg-gradient-to-r from-indigo-500/20 to-cyan-500/20 border border-indigo-400/30 rounded-lg p-4">
-            <div className="flex items-center">
-              <Brain className="h-5 w-5 text-cyan-400 mr-3" />
-              <div>
-                <p className="text-sm font-medium text-white">
-                  Need an optimized schedule?
-                </p>
-                <p className="text-xs text-gray-300 mt-1">
-                  Use the AI chatbot to generate schedules with priority-based
-                  optimization.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              onClick={() => setShowManualForm(true)}
-              className="bg-gradient-to-r from-purple-500 to-cyan-500 text-white px-6 py-3 rounded-lg hover:from-purple-600 hover:to-cyan-600 transition-all duration-300 flex items-center"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Create Manual Schedule
-            </button>
-          </div>
         </div>
 
         {/* Schedule Filters */}
@@ -922,155 +854,6 @@ const SchedulePage: React.FC = () => {
             >
               Generate Schedule with AI
             </button>
-          </div>
-        )}
-
-        {/* Manual Schedule Creation Modal */}
-        {showManualForm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Create Manual Schedule
-                </h3>
-                <button
-                  onClick={() => setShowManualForm(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Schedule Name
-                  </label>
-                  <input
-                    type="text"
-                    value={manualForm.name}
-                    onChange={(e) =>
-                      setManualForm({ ...manualForm, name: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                    placeholder="e.g., Weekly Study Plan"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Start Date
-                    </label>
-                    <input
-                      type="date"
-                      value={manualForm.start_date}
-                      onChange={(e) =>
-                        setManualForm({
-                          ...manualForm,
-                          start_date: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      End Date
-                    </label>
-                    <input
-                      type="date"
-                      value={manualForm.end_date}
-                      onChange={(e) =>
-                        setManualForm({
-                          ...manualForm,
-                          end_date: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Daily Study Hours
-                  </label>
-                  <input
-                    type="number"
-                    value={manualForm.daily_hours}
-                    onChange={(e) =>
-                      setManualForm({
-                        ...manualForm,
-                        daily_hours: parseInt(e.target.value) || 4,
-                      })
-                    }
-                    min="1"
-                    max="12"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Select Subjects
-                  </label>
-                  <div className="max-h-40 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2">
-                    {subjects.map((subject) => (
-                      <label
-                        key={subject._id}
-                        className="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={manualForm.subjectIds.includes(subject._id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setManualForm((prev) => ({
-                                ...prev,
-                                subjectIds: [...prev.subjectIds, subject._id],
-                              }));
-                            } else {
-                              setManualForm((prev) => ({
-                                ...prev,
-                                subjectIds: prev.subjectIds.filter(
-                                  (id) => id !== subject._id
-                                ),
-                              }));
-                            }
-                          }}
-                          className="mr-3 rounded text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-gray-900 dark:text-white">
-                          {subject.name}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={() => setShowManualForm(false)}
-                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={createManualSchedule}
-                  disabled={
-                    !manualForm.name ||
-                    !manualForm.start_date ||
-                    !manualForm.end_date ||
-                    manualForm.subjectIds.length === 0
-                  }
-                  className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white rounded-lg hover:from-indigo-600 hover:to-cyan-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Create Schedule
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </div>

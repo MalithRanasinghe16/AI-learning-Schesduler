@@ -9,8 +9,32 @@ export interface ChatbotAnalytics {
   userEngagement: number;
 }
 
+export interface DailyAnalytics {
+  studyTime: number; // Today's study time in minutes
+  sessionsCompleted: number; // Sessions completed today
+  focusScore: number; // Average focus score today
+  completionRate: number; // Today's goal completion rate
+  todaysGoal: number; // Daily study goal in minutes
+  streak: number; // Current daily streak
+  timeRemaining: number; // Minutes remaining to reach today's goal
+  bestSubjectToday?: string; // Subject with most progress today
+}
+
+export interface WeeklyAnalytics {
+  totalStudyTime: number; // Total weekly study time in minutes
+  totalSessions: number; // Total sessions this week
+  averageFocus: number; // Average focus score this week
+  weeklyGoal: number; // Weekly study goal in minutes
+  dailyConsistency: number[]; // Study time for each day [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+  bestDay: string; // Day with highest study time
+  weeklyProgress: number; // Percentage of weekly goal achieved
+  subjectDistribution: { name: string; time: number; sessions: number }[];
+}
+
 export interface EnhancedAnalytics extends Analytics {
   chatbotData: ChatbotAnalytics;
+  dailyAnalytics: DailyAnalytics;
+  weeklyAnalytics: WeeklyAnalytics;
   lastUpdated: Date;
   dataSource: {
     mainBackend: boolean;
@@ -228,6 +252,8 @@ class AnalyticsService {
         chatbot
       ),
       chatbotData: chatbot,
+      dailyAnalytics: this.calculateDailyAnalytics(mainData),
+      weeklyAnalytics: this.calculateWeeklyAnalytics(mainData),
       lastUpdated: new Date(),
       dataSource: {
         mainBackend: mainData !== null,
@@ -380,6 +406,103 @@ class AnalyticsService {
         userEngagement: 0,
       };
     }
+  }
+
+  private calculateDailyAnalytics(data: any): DailyAnalytics {
+    const dailyStudyTime = data?.weeklyStats?.dailyStudyTime || [
+      0, 0, 0, 0, 0, 0, 0,
+    ];
+    // Backend sends array where index 6 is today
+    const todaysStudyTime = dailyStudyTime[6] || 0;
+    const dailyGoal = 120; // Default 2 hours in minutes
+
+    // Calculate streak (mock for now - would need historical data)
+    const streak = this.calculateStudyStreak(dailyStudyTime);
+
+    return {
+      studyTime: todaysStudyTime,
+      sessionsCompleted: Math.floor(todaysStudyTime / 60), // Estimate sessions from time
+      focusScore: data?.weeklyStats?.averageFocus || 0,
+      completionRate: Math.min(100, (todaysStudyTime / dailyGoal) * 100),
+      todaysGoal: dailyGoal,
+      streak: streak,
+      timeRemaining: Math.max(0, dailyGoal - todaysStudyTime),
+      bestSubjectToday: this.getBestSubjectToday(data),
+    };
+  }
+
+  private calculateWeeklyAnalytics(data: any): WeeklyAnalytics {
+    const weeklyStats = data?.weeklyStats || {};
+    const dailyStudyTime = weeklyStats.dailyStudyTime || [0, 0, 0, 0, 0, 0, 0];
+    const weeklyGoal = 840; // Default 14 hours per week in minutes
+    const totalWeeklyTime = dailyStudyTime.reduce(
+      (sum: number, time: number) => sum + time,
+      0
+    );
+
+    const dayNames = [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ];
+    const bestDayIndex = dailyStudyTime.indexOf(Math.max(...dailyStudyTime));
+    const bestDay = dayNames[bestDayIndex] || "Monday";
+
+    return {
+      totalStudyTime: totalWeeklyTime,
+      totalSessions: weeklyStats.totalSessions || 0,
+      averageFocus: weeklyStats.averageFocus || 0,
+      weeklyGoal: weeklyGoal,
+      dailyConsistency: dailyStudyTime,
+      bestDay: bestDay,
+      weeklyProgress: Math.min(100, (totalWeeklyTime / weeklyGoal) * 100),
+      subjectDistribution: this.calculateSubjectDistribution(data),
+    };
+  }
+
+  private calculateStudyStreak(dailyStudyTime: number[]): number {
+    // Calculate consecutive days with study time > 0
+    let streak = 0;
+    // Backend array: index 6 is today, count backwards
+
+    // Count backwards from today (index 6)
+    for (let i = 6; i >= 0; i--) {
+      if (dailyStudyTime[i] > 0) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+
+    return streak;
+  }
+
+  private getBestSubjectToday(data: any): string | undefined {
+    const subjectDetails = data?.subjectProgress?.details || [];
+    if (subjectDetails.length === 0) return undefined;
+
+    // Find subject with highest progress (mock calculation)
+    const bestSubject = subjectDetails.reduce((best: any, current: any) => {
+      return (current.progress || 0) > (best.progress || 0) ? current : best;
+    }, subjectDetails[0]);
+
+    return bestSubject?.name;
+  }
+
+  private calculateSubjectDistribution(
+    data: any
+  ): { name: string; time: number; sessions: number }[] {
+    const subjectDetails = data?.subjectProgress?.details || [];
+
+    return subjectDetails.map((subject: any) => ({
+      name: subject.name || "Unknown Subject",
+      time: Math.floor((subject.progress || 0) * 10), // Mock time calculation
+      sessions: Math.floor((subject.progress || 0) / 20), // Mock sessions calculation
+    }));
   }
 }
 

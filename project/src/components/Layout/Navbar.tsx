@@ -1,8 +1,14 @@
-
-import React, { useState } from 'react';
-import { Brain, User, LogOut, Settings, Calendar, BookOpen, TrendingUp } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { useState } from "react";
+import {
+  Brain,
+  User,
+  LogOut,
+  Settings,
+  Calendar,
+  BookOpen,
+} from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 
 const Navbar: React.FC = () => {
   const { user, logout } = useAuth();
@@ -10,14 +16,13 @@ const Navbar: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Brain, path: '/' },
-    { id: 'subjects', label: 'Subjects', icon: BookOpen, path: '/subjects' },
-    { id: 'schedule', label: 'Schedule', icon: Calendar, path: '/schedule' },
-    { id: 'analytics', label: 'Analytics', icon: TrendingUp, path: '/analytics' },
-    { id: 'profile', label: 'Profile', icon: User, path: '/profile' },
+    { id: "dashboard", label: "Dashboard", icon: Brain, path: "/" },
+    { id: "subjects", label: "Subjects", icon: BookOpen, path: "/subjects" },
+    { id: "schedule", label: "Schedule", icon: Calendar, path: "/schedule" },
+    { id: "profile", label: "Profile", icon: User, path: "/profile" },
   ];
 
-  const currentPage = location.pathname.replace('/', '') || 'dashboard';
+  const currentPage = location.pathname.replace("/", "") || "dashboard";
 
   return (
     <nav className="bg-gradient-to-r from-indigo-900 to-purple-900 shadow-lg">
@@ -39,8 +44,8 @@ const Navbar: React.FC = () => {
                     to={item.path}
                     className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-all duration-300 ${
                       currentPage === item.id
-                        ? 'border-cyan-400 text-cyan-300'
-                        : 'border-transparent text-gray-300 hover:text-cyan-300 hover:border-cyan-400'
+                        ? "border-cyan-400 text-cyan-300"
+                        : "border-transparent text-gray-300 hover:text-cyan-300 hover:border-cyan-400"
                     }`}
                   >
                     <Icon className="h-4 w-4 mr-2" />
@@ -54,7 +59,9 @@ const Navbar: React.FC = () => {
           <div className="flex items-center space-x-4">
             <div className="flex items-center text-sm text-gray-300">
               <User className="h-4 w-4 mr-2 text-cyan-400" />
-              <span>{user?.firstName} {user?.lastName}</span>
+              <span>
+                {user?.firstName} {user?.lastName}
+              </span>
             </div>
             <button
               onClick={logout}
@@ -67,12 +74,21 @@ const Navbar: React.FC = () => {
               className="md:hidden text-gray-300 hover:text-cyan-300"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d={isMobileMenuOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'}
+                  d={
+                    isMobileMenuOpen
+                      ? "M6 18L18 6M6 6l12 12"
+                      : "M4 6h16M4 12h16M4 18h16"
+                  }
                 />
               </svg>
             </button>
@@ -92,8 +108,8 @@ const Navbar: React.FC = () => {
                   to={item.path}
                   className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium transition-all duration-300 ${
                     currentPage === item.id
-                      ? 'bg-cyan-900 bg-opacity-20 border-cyan-400 text-cyan-300'
-                      : 'border-transparent text-gray-300 hover:text-cyan-300 hover:bg-gray-800 hover:border-cyan-400'
+                      ? "bg-cyan-900 bg-opacity-20 border-cyan-400 text-cyan-300"
+                      : "border-transparent text-gray-300 hover:text-cyan-300 hover:bg-gray-800 hover:border-cyan-400"
                   }`}
                   onClick={() => setIsMobileMenuOpen(false)}
                 >

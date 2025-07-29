@@ -447,12 +447,16 @@ router.patch("/:id/status", auth, async (req, res) => {
 
     // If marking as completed, add completion time
     if (status === "completed") {
-      updateData.completedAt = new Date();
+      const completionTime = new Date();
+      updateData.completedAt = completionTime;
+      updateData.actualEndTime = completionTime; // For analytics queries
     }
 
     // If starting a session, add start time
     if (status === "in-progress") {
-      updateData.startedAt = new Date();
+      const startTime = new Date();
+      updateData.startedAt = startTime;
+      updateData.actualStartTime = startTime; // For analytics queries
     }
 
     const updatedSession = await ScheduleSession.findByIdAndUpdate(
