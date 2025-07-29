@@ -17,12 +17,10 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { Analytics } from "../types";
 import { toast } from "react-toastify";
-import { testAnalytics } from "../utils/testAnalytics";
 import {
   analyticsService,
   EnhancedAnalytics,
 } from "../services/analyticsService";
-import "../utils/debugAnalytics"; // Import debug utilities
 
 // Lazy load Chart.js component for performance
 const AnalyticsChart = lazy(
@@ -62,29 +60,11 @@ const Dashboard: React.FC = () => {
         event.preventDefault();
         createTestData();
       }
-      // Ctrl+D for debug
-      if (event.ctrlKey && event.key === "d") {
-        event.preventDefault();
-        runDebugTest();
-      }
     };
 
     window.addEventListener("keydown", handleKeyPress);
     return () => window.removeEventListener("keydown", handleKeyPress);
   }, []);
-
-  // Debug test function
-  const runDebugTest = async () => {
-    try {
-      console.log("🧪 Running analytics debug test...");
-      const result = await testAnalytics();
-      setAnalytics(result);
-      toast.success("Analytics debug completed! Check console for details.");
-    } catch (error) {
-      console.error("❌ Debug failed:", error);
-      toast.error("Analytics debug failed. Check console for details.");
-    }
-  };
 
   // Fetch analytics data with enhanced dual-source integration
   const fetchAnalytics = async (showToast: boolean = false) => {
