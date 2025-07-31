@@ -1,52 +1,181 @@
 # 🧠 AI Learning Scheduler
 
-An intelligent study scheduling application that uses AI to optimize learning plans based on subject priorities, deadlines, and personal preferences.
+An intelligent study scheduling application that uses AI to optimize learning plans based on subject priorities, deadlines, and personal preferences. Features an intelligent chatbot that understands natural language for seamless interaction.
 
 ## ✨ Features
 
-- **AI-Powered Scheduling**: Intelligent schedule generation with priority-based optimization
-- **Interactive Dashboard**: Real-time analytics with daily/weekly views
-- **Subject Management**: Comprehensive subject tracking with progress monitoring
-- **Session Management**: Complete/mark sessions, track study time and focus scores
-- **Smart Analytics**: Detailed insights into study patterns and performance
-- **Responsive Design**: Modern, clean interface that works on all devices
+- **🤖 Intelligent Chatbot**: Natural language processing for intuitive interaction
+- **🧠 AI-Powered Scheduling**: Smart schedule generation with priority-based optimization
+- **📊 Interactive Dashboard**: Real-time analytics with daily/weekly views
+- **📚 Subject Management**: Comprehensive subject tracking with progress monitoring
+- **⏱️ Session Management**: Complete/mark sessions, track study time and focus scores
+- **📈 Smart Analytics**: Detailed insights into study patterns and performance
+- **📱 Responsive Design**: Modern, clean interface that works on all devices
+- **🎯 Contextual Suggestions**: AI provides personalized study recommendations
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Option 1: Automated Setup (Recommended)
 
-- Node.js (v18 or higher)
-- Python (v3.8 or higher)
-- MongoDB Atlas account
+**Windows:**
 
-### Installation
+```bash
+# Clone the repository
+git clone https://github.com/MalithRanasinghe16/AI-learning-Schesduler.git
+cd AI-learning-Schesduler/project
 
-1. **Clone the repository**
-   \`\`\`bash
-   git clone <your-repo-url>
-   cd AI-learning-Scheduler/project
-   \`\`\`
+# Run automated setup
+setup.bat
+```
 
-2. **Install all dependencies**
-   \`\`\`bash
-   npm run setup
-   \`\`\`
+**macOS/Linux:**
 
-3. **Configure environment variables**
+```bash
+# Clone the repository
+git clone https://github.com/MalithRanasinghe16/AI-learning-Schesduler.git
+cd AI-learning-Schesduler/project
 
-   - Copy \`.env.example\` to \`.env\`
-   - Copy \`chatbot/.env.example\` to \`chatbot/.env\`
-   - Fill in your MongoDB connection string and other credentials
+# Make setup script executable and run
+chmod +x setup.sh
+./setup.sh
+```
 
-4. **Start all services**
-   \`\`\`bash
+### Option 2: Manual Setup
+
+#### Prerequisites
+
+- **Node.js** (v18 or higher) - [Download](https://nodejs.org/)
+- **Python** (v3.9 or higher) - [Download](https://python.org/)
+- **MongoDB** - [Local](https://www.mongodb.com/try/download/community) or [Atlas](https://www.mongodb.com/atlas)
+
+#### Step-by-step Installation
+
+1. **Clone and navigate**
+
+   ```bash
+   git clone https://github.com/MalithRanasinghe16/AI-learning-Schesduler.git
+   cd AI-learning-Schesduler/project
+   ```
+
+2. **Install Node.js dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **Setup Python environment**
+
+   **Windows:**
+
+   ```bash
+   cd chatbot
+   python -m venv .venv
+   .venv\Scripts\activate
+   pip install -r requirements.txt
+   python -m spacy download en_core_web_sm
+   cd ..
+   ```
+
+   **macOS/Linux:**
+
+   ```bash
+   cd chatbot
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   python -m spacy download en_core_web_sm
+   cd ..
+   ```
+
+4. **Configure environment variables**
+
+   Create `server/.env`:
+
+   ```env
+   PORT=5000
+   MONGODB_URI=mongodb://localhost:27017/ai-learning-scheduler
+   JWT_SECRET=your-super-secret-jwt-key-here
+   NODE_ENV=development
+   CORS_ORIGIN=http://localhost:5173
+   ```
+
+   Create `chatbot/.env`:
+
+   ```env
+   BACKEND_URL=http://localhost:5000
+   LOG_LEVEL=INFO
+   SECRET_KEY=your-chatbot-secret-key
+   ```
+
+5. **Start the application**
+
+   **Option A: All services together**
+
+   ```bash
    npm run start:all
-   \`\`\`
+   ```
 
-5. **Access the application**
-   - Frontend: http://localhost:5173
-   - Backend API: http://localhost:5000
-   - Chatbot API: http://localhost:8000
+   **Option B: Individual terminals**
+
+   ```bash
+   # Terminal 1 - Frontend
+   npm run dev
+
+   # Terminal 2 - Backend
+   npm run dev:server
+
+   # Terminal 3 - Chatbot
+   npm run dev:chatbot  # Windows
+   npm run dev:chatbot:unix  # macOS/Linux
+   ```
+
+## 📁 Project Structure
+
+```
+AI-learning-Scheduler/
+├── project/
+│   ├── src/                     # React frontend
+│   │   ├── components/          # UI components
+│   │   ├── contexts/           # React contexts
+│   │   ├── services/           # API services
+│   │   └── types/              # TypeScript types
+│   ├── server/                 # Node.js backend
+│   │   ├── config/             # Database config
+│   │   ├── middleware/         # Express middleware
+│   │   ├── models/             # Database models
+│   │   ├── routes/             # API routes
+│   │   └── services/           # Business logic
+│   ├── chatbot/                # Python chatbot service
+│   │   ├── models/             # AI models
+│   │   ├── main.py             # FastAPI application
+│   │   ├── requirements.txt    # Python dependencies
+│   │   └── .venv/              # Python virtual environment
+│   ├── package.json            # Node.js dependencies
+│   ├── SETUP.md               # Detailed setup guide
+│   ├── setup.bat              # Windows setup script
+│   └── setup.sh               # macOS/Linux setup script
+```
+
+## 🌐 Application URLs
+
+Once running, access the application at:
+
+- **Frontend**: http://localhost:5173
+- **Backend API**: http://localhost:5000
+- **Chatbot API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
+
+## 💬 Using the Chatbot
+
+The AI chatbot understands natural language! Try these examples:
+
+- _"Schedule 2 hours of math study for tomorrow"_
+- _"What should I study next?"_
+- _"Show my progress in physics"_
+- _"Add a new subject called Chemistry"_
+- _"Create a study schedule for this week"_
+
+For structured options, simply type: **"show menu"**
 
 ## 📁 Project Structure
 

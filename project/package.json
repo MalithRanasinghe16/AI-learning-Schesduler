@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:server": "tsx watch server/server.ts",
     "dev:chatbot": "cd chatbot && .venv\\Scripts\\python.exe -m uvicorn main:app --reload --port 8000",
+    "dev:chatbot:unix": "cd chatbot && source .venv/bin/activate && python -m uvicorn main:app --reload --port 8000",
     "build": "vite build",
     "preview": "vite preview",
     "start": "tsx server/server.ts",
@@ -14,8 +15,14 @@
     "lint": "eslint .",
     "clean": "rimraf dist node_modules/.cache",
     "setup": "npm install && cd chatbot && pip install -r requirements.txt",
+    "setup:full": "npm run setup:node && npm run setup:python",
+    "setup:node": "npm install",
+    "setup:python": "cd chatbot && python -m venv .venv && .venv\\Scripts\\activate && pip install -r requirements.txt && python -m spacy download en_core_web_sm",
+    "setup:python:unix": "cd chatbot && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python -m spacy download en_core_web_sm",
     "start:all": "scripts\\start_all.bat",
-    "docs": "echo Opening project documentation... && start docs\\project-structure.md"
+    "start:all:unix": "scripts/start_all.sh",
+    "docs": "echo Opening project documentation... && start docs\\project-structure.md",
+    "postinstall": "echo Run 'npm run setup:python' to complete the Python setup"
   },
   "dependencies": {
     "@types/moment": "^2.13.0",
