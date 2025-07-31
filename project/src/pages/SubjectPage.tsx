@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   Filter,
@@ -12,19 +13,26 @@ import {
   MessageCircle,
   Star,
   Calendar,
+  RefreshCw,
+  Trash2,
+  Eye,
+  EyeOff,
+  CheckCircle,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { Subject } from "../types";
+import { Subject, Schedule } from "../types";
 import { toast } from "react-toastify";
 import { apiService } from "../services/api";
 
 const SubjectPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [filteredSubjects, setFilteredSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [filterCompletion, setFilterCompletion] = useState<string>("active"); // New filter for completion status
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [editForm, setEditForm] = useState({
     description: "",
@@ -142,15 +150,23 @@ const SubjectPage: React.FC = () => {
       );
     }
 
+    // Filter by completion status
+    if (filterCompletion === "active") {
+      filtered = filtered.filter((subject) => subject.progress < 100);
+    } else if (filterCompletion === "completed") {
+      filtered = filtered.filter((subject) => subject.progress >= 100);
+    }
+    // "all" shows both active and completed
+
     setFilteredSubjects(filtered);
-  }, [subjects, searchTerm, filterPriority]);
+  }, [subjects, searchTerm, filterPriority, filterCompletion]);
 
   const handleEdit = (subject: Subject) => {
     setEditingSubject(subject);
     setEditForm({
       description: subject.description,
       priority: subject.priority,
-      estimated_hours: subject.estimated_hours,
+      estimated_hours: subject.estimated_hours || subject.estimatedHours || 0,
       progress: subject.progress,
     });
   };
@@ -184,26 +200,325 @@ const SubjectPage: React.FC = () => {
     }
   };
 
-  const handleProgressUpdate = async (
+  const handleDeleteSubject = async (
     subjectId: string,
-    newProgress: number
+    subjectName: string
   ) => {
     try {
-      await apiService.updateSubjectProgress(subjectId, newProgress);
+      // First, check if subject is used in any active schedules
+      let affectedSchedules: Schedule[] = [];
+      let activeAffectedSchedules: Schedule[] = [];
 
+      try {
+        const affectedSchedulesResponse =
+          await apiService.getAffectedSchedulesBySubject(subjectId);
+        affectedSchedules = affectedSchedulesResponse?.schedules || [];
+        activeAffectedSchedules = affectedSchedules.filter(
+          (schedule) =>
+            schedule.status !== "completed" && schedule.status !== "archived"
+        );
+      } catch (scheduleError) {
+        console.warn(
+          "Could not fetch affected schedules, proceeding with simple delete:",
+          scheduleError
+        );
+        // If we can't fetch affected schedules, fall back to simple delete
+        if (
+          !window.confirm(
+            `Are you sure you want to delete "${subjectName}"? This action cannot be undone.`
+          )
+        ) {
+          return;
+        }
+
+        await apiService.deleteSubject(subjectId);
+        toast.success(`Subject "${subjectName}" deleted successfully!`);
+
+        // Remove from local state
+        setSubjects((prev) =>
+          prev.filter((subject) => subject._id !== subjectId)
+        );
+        setFilteredSubjects((prev) =>
+          prev.filter((subject) => subject._id !== subjectId)
+        );
+        return;
+      }
+
+      if (activeAffectedSchedules.length > 0) {
+        // Calculate total hours that will be redistributed
+        const totalHoursToRedistribute = activeAffectedSchedules.reduce(
+          (total, schedule) => {
+            const subjectSessions =
+              schedule.blocks?.filter(
+                (block) =>
+                  block.subjectId === subjectId && block.status !== "completed"
+              ) || [];
+            const hoursFromSchedule = subjectSessions.reduce(
+              (sum, session) => sum + session.duration / 60,
+              0
+            );
+            return total + hoursFromSchedule;
+          },
+          0
+        );
+
+        // Enhanced confirmation dialog with schedule impact info
+        const scheduleNames = activeAffectedSchedules
+          .map((s) => s.name)
+          .join("\n• ");
+        const confirmMessage = `⚠️ SCHEDULE IMPACT WARNING ⚠️
+
+Deleting "${subjectName}" will affect ${
+          activeAffectedSchedules.length
+        } active schedule(s):
+
+• ${scheduleNames}
+
+📊 Impact Summary:
+• ${totalHoursToRedistribute.toFixed(1)} hours will be redistributed
+• Remaining subjects will get extended sessions based on:
+  - Subject priority levels
+  - Remaining estimated hours
+  - Current progress
+• Overall schedule duration may be adjusted
+
+This action cannot be undone. Continue?`;
+
+        if (!window.confirm(confirmMessage)) {
+          return;
+        }
+
+        // Use enhanced delete API that handles schedule adjustments
+        const result = await apiService.deleteSubjectWithScheduleAdjustment(
+          subjectId
+        );
+
+        // Show detailed success message
+        const adjustmentSummary = result?.adjustmentSummary || {};
+        let successMessage = `✅ Subject "${subjectName}" deleted successfully!\n\n`;
+
+        if (activeAffectedSchedules.length > 0) {
+          successMessage += `📅 Schedule Adjustments Made:\n`;
+          activeAffectedSchedules.forEach((schedule) => {
+            const scheduleAdjustment = adjustmentSummary[schedule._id];
+            if (scheduleAdjustment) {
+              successMessage += `• ${schedule.name}: ${
+                scheduleAdjustment.redistributedHours?.toFixed(1) || 0
+              }h redistributed among ${
+                scheduleAdjustment.affectedSubjects || 0
+              } subjects\n`;
+            }
+          });
+        }
+
+        toast.success(successMessage, { autoClose: 8000 });
+      } else {
+        // No active schedules affected, use simple confirmation
+        if (
+          !window.confirm(
+            `Are you sure you want to delete "${subjectName}"? This action cannot be undone.`
+          )
+        ) {
+          return;
+        }
+
+        await apiService.deleteSubject(subjectId);
+        toast.success(`Subject "${subjectName}" deleted successfully!`);
+      }
+
+      // Remove from local state
+      setSubjects((prev) =>
+        prev.filter((subject) => subject._id !== subjectId)
+      );
+      setFilteredSubjects((prev) =>
+        prev.filter((subject) => subject._id !== subjectId)
+      );
+    } catch (error) {
+      console.error("Error deleting subject:", error);
+      if (error.response?.data?.message) {
+        toast.error(`Failed to delete subject: ${error.response.data.message}`);
+      } else {
+        toast.error("Failed to delete subject. Please try again.");
+      }
+    }
+  };
+
+  // Handle subject completion (when progress reaches 100%)
+  const handleSubjectCompletion = async (
+    subjectId: string,
+    subjectName: string
+  ) => {
+    try {
+      // Check if subject has any upcoming sessions in active schedules
+      const affectedSchedulesResponse =
+        await apiService.getAffectedSchedulesBySubject(subjectId);
+      const affectedSchedules = affectedSchedulesResponse?.schedules || [];
+
+      const activeSchedulesWithUpcomingSessions = affectedSchedules.filter(
+        (schedule) => {
+          if (schedule.status === "completed" || schedule.status === "archived")
+            return false;
+
+          // Check if there are any non-completed sessions for this subject
+          const upcomingSessions =
+            schedule.blocks?.filter(
+              (block) =>
+                block.subjectId === subjectId && block.status !== "completed"
+            ) || [];
+
+          return upcomingSessions.length > 0;
+        }
+      );
+
+      if (activeSchedulesWithUpcomingSessions.length > 0) {
+        // Use the new endpoint to complete all remaining sessions
+        const completionResult = await apiService.completeSubjectSessions(
+          subjectId
+        );
+
+        // Notify user about automatic schedule adjustments
+        const scheduleNames = activeSchedulesWithUpcomingSessions
+          .map((s) => s.name)
+          .join(", ");
+        toast.success(
+          `🎉 Subject "${subjectName}" completed! ${completionResult.completedSessions} remaining sessions in schedules (${scheduleNames}) have been marked as completed.`,
+          { autoClose: 6000 }
+        );
+
+        // Dispatch event to notify other components (like SchedulePage) to refresh
+        window.dispatchEvent(
+          new CustomEvent("subject-completed", {
+            detail: {
+              subjectId,
+              subjectName,
+              affectedSchedules: activeSchedulesWithUpcomingSessions,
+            },
+          })
+        );
+      } else {
+        // No active sessions, just update the subject progress
+        await apiService.updateSubjectProgress(subjectId, 100);
+        toast.success(`🎉 Subject "${subjectName}" completed!`);
+      }
+
+      // Update local state
       setSubjects((prev) =>
         prev.map((subject) =>
           subject._id === subjectId
-            ? { ...subject, progress: newProgress }
+            ? { ...subject, progress: 100, isCompleted: true }
             : subject
         )
       );
 
-      toast.success("Progress updated!");
+      setFilteredSubjects((prev) =>
+        prev.map((subject) =>
+          subject._id === subjectId
+            ? { ...subject, progress: 100, isCompleted: true }
+            : subject
+        )
+      );
     } catch (error) {
-      console.error("Error updating progress:", error);
-      toast.error("Failed to update progress");
+      console.error("Error handling subject completion:", error);
+      toast.error("Failed to update subject completion status");
     }
+  };
+
+  // Enhanced progress refresh that checks for completion
+  const refreshSubjectProgress = async (subjectId: string) => {
+    try {
+      console.log("🔄 Refreshing progress for subject:", subjectId);
+
+      // Call the backend to recalculate progress from sessions
+      const response = await fetch(
+        `http://localhost:5000/api/subjects/${subjectId}/progress`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log("📡 Response status:", response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("📊 Progress data received:", data);
+
+        // Update the subject in local state
+        setSubjects((prev) =>
+          prev.map((subject) =>
+            subject._id === subjectId
+              ? { ...subject, ...data.subject }
+              : subject
+          )
+        );
+
+        // Also update filtered subjects
+        setFilteredSubjects((prev) =>
+          prev.map((subject) =>
+            subject._id === subjectId
+              ? { ...subject, ...data.subject }
+              : subject
+          )
+        );
+
+        toast.success(`Progress refreshed: ${data.calculatedProgress}%`);
+
+        // Check if subject was just completed (reached 100%)
+        if (data.calculatedProgress >= 100 && data.subject?.progress < 100) {
+          const subject = subjects.find((s) => s._id === subjectId);
+          if (subject) {
+            // Automatically handle completion
+            setTimeout(() => {
+              handleSubjectCompletion(subjectId, subject.name);
+            }, 1000); // Small delay to let the progress update settle
+          }
+        }
+      } else {
+        const errorData = await response.json();
+        console.error("❌ Server error:", errorData);
+        toast.error(
+          `Failed to refresh progress: ${errorData.message || "Unknown error"}`
+        );
+      }
+    } catch (error) {
+      console.error("❌ Error refreshing progress:", error);
+      toast.error("Failed to refresh progress - network error");
+    }
+  };
+
+  // Handler for Analytics button
+  const handleAnalytics = (subject: Subject) => {
+    // Navigate to dashboard with subject filter
+    navigate("/dashboard", {
+      state: {
+        focusSubject: subject._id,
+        subjectName: subject.name,
+      },
+    });
+    toast.info(`Viewing analytics for ${subject.name}`);
+  };
+
+  // Handler for Schedule button
+  const handleSchedule = (subject: Subject) => {
+    // Navigate to schedule page and trigger chatbot
+    navigate("/schedule");
+
+    // Small delay to ensure page loads, then trigger chatbot
+    setTimeout(() => {
+      const event = new CustomEvent("open-chatbot", {
+        detail: {
+          action: "schedule",
+          subject: subject.name,
+          message: `Create a study schedule for ${subject.name}`,
+        },
+      });
+      window.dispatchEvent(event);
+    }, 500);
+
+    toast.info(`Creating schedule for ${subject.name}`);
   };
 
   const getPriorityColor = (priority: string) => {
@@ -282,6 +597,47 @@ const SubjectPage: React.FC = () => {
                 </option>
               </select>
             </div>
+            <div className="relative">
+              <Eye className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <select
+                value={filterCompletion}
+                onChange={(e) => setFilterCompletion(e.target.value)}
+                className="pl-10 pr-8 py-3 bg-white/20 border border-white/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-400"
+              >
+                <option value="active" className="text-gray-800">
+                  Active Subjects
+                </option>
+                <option value="completed" className="text-gray-800">
+                  Completed Subjects
+                </option>
+                <option value="all" className="text-gray-800">
+                  All Subjects
+                </option>
+              </select>
+            </div>
+          </div>
+
+          {/* Filter Summary */}
+          <div className="mt-4 flex items-center justify-between text-sm text-gray-300">
+            <span>
+              Showing {filteredSubjects.length} of {subjects.length} subjects
+              {filterCompletion === "active" && " (active only)"}
+              {filterCompletion === "completed" && " (completed only)"}
+            </span>
+            {(searchTerm ||
+              filterPriority !== "all" ||
+              filterCompletion !== "active") && (
+              <button
+                onClick={() => {
+                  setSearchTerm("");
+                  setFilterPriority("all");
+                  setFilterCompletion("active");
+                }}
+                className="text-purple-400 hover:text-purple-300 transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         </div>
 
@@ -316,6 +672,14 @@ const SubjectPage: React.FC = () => {
                     <h3 className="text-xl font-semibold text-white truncate">
                       {subject.name}
                     </h3>
+                    {subject.progress >= 100 && (
+                      <div className="flex items-center space-x-1">
+                        <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                        <span className="text-xs text-yellow-400 font-medium">
+                          Completed
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center space-x-2">
                     <span
@@ -328,8 +692,18 @@ const SubjectPage: React.FC = () => {
                     <button
                       onClick={() => handleEdit(subject)}
                       className="p-1 text-gray-400 hover:text-white transition-colors"
+                      title="Edit subject"
                     >
                       <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleDeleteSubject(subject._id, subject.name)
+                      }
+                      className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                      title="Delete subject"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -344,11 +718,21 @@ const SubjectPage: React.FC = () => {
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center space-x-2 text-gray-300">
                       <Clock className="w-4 h-4" />
-                      <span>{subject.estimated_hours}h estimated</span>
+                      <span>
+                        {subject.estimated_hours || subject.estimatedHours || 0}
+                        h estimated
+                      </span>
                     </div>
                     <div className="flex items-center space-x-2 text-gray-300">
                       <Target className="w-4 h-4" />
                       <span>{subject.progress}% complete</span>
+                      <button
+                        onClick={() => refreshSubjectProgress(subject._id)}
+                        className="ml-2 p-1 text-gray-400 hover:text-gray-200 transition-colors"
+                        title="Refresh progress from completed sessions"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
 
@@ -362,40 +746,37 @@ const SubjectPage: React.FC = () => {
                     ></div>
                   </div>
 
-                  {/* Progress Slider */}
+                  {/* Progress Info */}
                   <div className="mt-2">
-                    <label className="text-xs text-gray-400 mb-1 block">
-                      Update Progress:
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={subject.progress}
-                      onChange={(e) =>
-                        handleProgressUpdate(
-                          subject._id,
-                          parseInt(e.target.value)
-                        )
-                      }
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-                    />
+                    <p className="text-xs text-gray-400 text-center">
+                      Progress calculated from completed study sessions
+                    </p>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
                 <div className="flex space-x-2">
-                  <button className="flex-1 px-3 py-2 bg-purple-600/20 text-purple-300 rounded-lg text-sm hover:bg-purple-600/30 transition-colors border border-purple-500/30">
+                  {!subject.isCompleted && subject.progress < 100 && (
+                    <button
+                      onClick={() =>
+                        handleSubjectCompletion(subject._id, subject.name)
+                      }
+                      className="flex-1 px-3 py-2 bg-green-600/20 text-green-300 rounded-lg text-sm hover:bg-green-600/30 transition-colors border border-green-500/30"
+                      title="Mark as completed"
+                    >
+                      <CheckCircle className="w-4 h-4 inline mr-1" />
+                      Complete
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleAnalytics(subject)}
+                    className="flex-1 px-3 py-2 bg-purple-600/20 text-purple-300 rounded-lg text-sm hover:bg-purple-600/30 transition-colors border border-purple-500/30"
+                  >
                     <TrendingUp className="w-4 h-4 inline mr-1" />
                     Analytics
                   </button>
                   <button
-                    onClick={() => {
-                      const event = new CustomEvent("open-chatbot", {
-                        detail: { action: "schedule", subject: subject.name },
-                      });
-                      window.dispatchEvent(event);
-                    }}
+                    onClick={() => handleSchedule(subject)}
                     className="flex-1 px-3 py-2 bg-cyan-600/20 text-cyan-300 rounded-lg text-sm hover:bg-cyan-600/30 transition-colors border border-cyan-500/30"
                   >
                     <Calendar className="w-4 h-4 inline mr-1" />

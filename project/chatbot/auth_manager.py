@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class AuthManager:
     def __init__(self):
-        self.secret_key = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-this')
+        self.secret_key = os.getenv('JWT_SECRET', 'your-secret-key-change-this')
         self.algorithm = os.getenv('JWT_ALGORITHM', 'HS256')
         self.token_expiry_days = 7
         

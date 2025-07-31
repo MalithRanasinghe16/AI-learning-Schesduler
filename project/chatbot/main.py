@@ -22,7 +22,7 @@ except OSError:
     nlp = None
 
 # Backend URL
-BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:3001')
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:5000')
 
 # Import our modules
 from nlp_processor import NLPProcessor
@@ -116,15 +116,165 @@ def clear_conversation_state(user_id: str):
     if user_id in conversation_states:
         del conversation_states[user_id]
 
-def show_main_menu():
-    """Show main menu options"""
+async def show_intelligent_welcome(user_id: str = None, auth_token: str = None):
+    """Show intelligent welcome with contextual suggestions based on user data"""
+    try:
+        # Get current time for contextual greetings
+        current_hour = datetime.now().hour
+        if current_hour < 12:
+            greeting = "Good morning"
+        elif current_hour < 17:
+            greeting = "Good afternoon"
+        else:
+            greeting = "Good evening"
+        
+        # Base welcome message
+        welcome_msg = f"🤖 **{greeting}! I'm your AI Study Assistant.**\n\n"
+        welcome_msg += "I understand natural language, so just tell me what you'd like to do!\n\n"
+        
+        # Get user context for smart suggestions
+        contextual_suggestions = []
+        smart_tips = []
+        
+        try:
+            if user_id and user_id != "anonymous":
+                # Try to fetch user data for contextual suggestions
+                user_data = await backend_client.get_user_context(user_id, auth_token)
+                if user_data:
+                    # Generate contextual suggestions based on user data
+                    contextual_suggestions, smart_tips = generate_contextual_suggestions(user_data)
+        except Exception as e:
+            logger.warning(f"Could not fetch user context: {e}")
+        
+        # Default suggestions if no user context
+        if not contextual_suggestions:
+            contextual_suggestions = [
+                "Schedule 2 hours for math today",
+                "What should I study next?",
+                "Show my progress in physics",
+                "Add a new subject called Chemistry",
+                "How much time did I study this week?"
+            ]
+        
+        if not smart_tips:
+            smart_tips = [
+                "💡 **Try natural language**: \"Schedule math for tomorrow morning\"",
+                "🎯 **Ask for recommendations**: \"What should I study right now?\"",
+                "📊 **Check progress**: \"How am I doing in physics?\"",
+                "⚡ **Quick actions**: Type 'show menu' to see all options"
+            ]
+        
+        # Build response with tips and suggestions
+        welcome_msg += "**Here are some ways to get started:**\n"
+        for tip in smart_tips[:3]:  # Show max 3 tips
+            welcome_msg += f"{tip}\n"
+        
+        return ChatResponse(
+            response=welcome_msg,
+            intent="intelligent_welcome",
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=f"welcome_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[],  # No buttons - encourage natural language
+            suggestions=contextual_suggestions
+        )
+    except Exception as e:
+        logger.error(f"Error generating intelligent welcome: {e}")
+        # Fallback to simple welcome
+        return show_simple_welcome()
+
+def generate_contextual_suggestions(user_data: dict) -> tuple[list, list]:
+    """Generate smart suggestions based on user context"""
+    suggestions = []
+    tips = []
+    
+    try:
+        subjects = user_data.get('subjects', [])
+        recent_sessions = user_data.get('recent_sessions', [])
+        upcoming_deadlines = user_data.get('upcoming_deadlines', [])
+        
+        # Contextual suggestions based on data
+        if upcoming_deadlines:
+            nearest_deadline = upcoming_deadlines[0]
+            days_left = (datetime.fromisoformat(nearest_deadline['deadline']) - datetime.now()).days
+            if days_left <= 3:
+                suggestions.append(f"Focus on {nearest_deadline['name']} - deadline in {days_left} days!")
+                tips.append(f"⚠️ **Urgent**: {nearest_deadline['name']} deadline approaching!")
+        
+        if subjects:
+            # Find subjects with low progress
+            low_progress_subjects = [s for s in subjects if s.get('progress', 0) < 30]
+            if low_progress_subjects:
+                subject_name = low_progress_subjects[0]['name']
+                suggestions.append(f"Work on {subject_name} - needs attention")
+        
+        # Check for inactive subjects
+        if recent_sessions:
+            studied_subjects = {s['subject_name'] for s in recent_sessions[-5:]}  # Last 5 sessions
+            all_subjects = {s['name'] for s in subjects}
+            neglected = all_subjects - studied_subjects
+            if neglected:
+                subject_name = list(neglected)[0]
+                suggestions.append(f"Haven't studied {subject_name} recently")
+                tips.append(f"🕒 **Reminder**: You haven't studied {subject_name} in a while")
+        
+        # Time-based suggestions
+        current_hour = datetime.now().hour
+        if 9 <= current_hour <= 11:
+            suggestions.append("Perfect time for focused math work")
+            tips.append("🌅 **Morning boost**: Great time for analytical subjects!")
+        elif 14 <= current_hour <= 16:
+            suggestions.append("Good afternoon for creative subjects")
+            tips.append("☀️ **Afternoon energy**: Ideal for creative or discussion-based learning")
+        
+        # Add variety in suggestions
+        suggestions.extend([
+            "What's the most important thing to study today?",
+            "Create a schedule for this week",
+            "Show my learning analytics"
+        ])
+        
+        # Add helpful tips
+        tips.extend([
+            "💬 **Natural conversation**: Ask me anything like 'What should I focus on?'",
+            "🚀 **Smart scheduling**: I'll prioritize based on deadlines and difficulty",
+            "📈 **Progress tracking**: I analyze your study patterns to help you improve"
+        ])
+        
+    except Exception as e:
+        logger.error(f"Error generating contextual suggestions: {e}")
+    
+    return suggestions[:6], tips[:4]  # Limit suggestions and tips
+
+def show_simple_welcome():
+    """Simple fallback welcome message"""
     return ChatResponse(
-        response="🎯 **Welcome to your AI Learning Scheduler!** How can I help you today?\n\nChoose one of the main options below:",
+        response="🤖 **Hi there! I'm your AI Study Assistant.**\n\nI understand natural language - just tell me what you'd like to do!\n\n💡 **Try saying**: \"Schedule math for tomorrow\" or \"What should I study?\"",
+        intent="simple_welcome",
+        confidence=1.0,
+        entities={},
+        actions=[],
+        conversation_id=f"simple_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        quick_actions=[],
+        suggestions=[
+            "What should I study today?",
+            "Schedule 2 hours for math",
+            "Show my progress",
+            "Add a new subject",
+            "Create a study plan"
+        ]
+    )
+
+def show_main_menu():
+    """Show structured main menu options (accessible via 'show menu' command)"""
+    return ChatResponse(
+        response="📋 **Main Menu Options**\n\nHere are all the things I can help you with:",
         intent="main_menu",
         confidence=1.0,
         entities={},
         actions=[],
-        conversation_id=f"main_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        conversation_id=f"menu_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         quick_actions=[
             {"id": "add-subject", "label": "📝 Add New Subject", "icon": "plus", "message": "I want to add a new subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
             {"id": "create-schedule", "label": "📅 Create Schedule", "icon": "calendar", "message": "I want to create a study schedule", "color": "bg-green-600 hover:bg-green-700 text-white"},
@@ -133,9 +283,10 @@ def show_main_menu():
         ],
         suggestions=[
             "Add a new subject",
-            "Create study schedule",
+            "Create study schedule", 
             "Show my schedules",
-            "How much progress have I made?"
+            "How much progress have I made?",
+            "What should I study next?"
         ]
     )
 
@@ -196,6 +347,8 @@ class OptimalSubjectRequest(BaseModel):
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         user_data = auth_manager.verify_token(credentials.credentials)
+        # Add the original token to user_data for backend API calls
+        user_data['token'] = credentials.credentials
         return user_data
     except Exception as e:
         logger.error(f"Authentication error: {e}")
@@ -240,6 +393,144 @@ async def health_check():
             "timestamp": datetime.now().isoformat()
         }
 
+@app.get("/analytics")
+async def get_chatbot_analytics(current_user: dict = Depends(get_current_user)):
+    """Enhanced analytics endpoint for chatbot integration"""
+    try:
+        # Get analytics data from backend
+        analytics_data = await backend_client.get_analytics(
+            current_user['user_id'], 
+            current_user.get('token', '')
+        )
+        
+        if not analytics_data:
+            return {
+                "success": False,
+                "message": "No analytics data available",
+                "data": {
+                    "weeklyStats": {
+                        "totalStudyTime": 0,
+                        "totalSessions": 0,
+                        "completionRate": 0,
+                        "averageFocus": 0
+                    },
+                    "subjectProgress": {
+                        "total": 0,
+                        "completed": 0,
+                        "inProgress": 0,
+                        "notStarted": 0,
+                        "details": []
+                    },
+                    "insights": {
+                        "motivationalMessage": "Ready to start your learning journey?",
+                        "recommendations": [
+                            "Add your first subject to begin tracking progress",
+                            "Create a study schedule to stay organized",
+                            "Set study goals to measure success"
+                        ]
+                    }
+                }
+            }
+        
+        # Enhanced analytics with insights
+        enhanced_analytics = {
+            "success": True,
+            "data": analytics_data,
+            "chatbot_insights": {
+                "performance_level": get_performance_level(analytics_data),
+                "focus_trend": get_focus_trend(analytics_data),
+                "suggestions": get_personalized_suggestions(analytics_data),
+                "motivational_message": get_motivational_message(analytics_data)
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        return enhanced_analytics
+        
+    except Exception as e:
+        logger.error(f"Error in chatbot analytics endpoint: {e}")
+        return {
+            "success": False,
+            "message": f"Analytics error: {str(e)}",
+            "data": None,
+            "timestamp": datetime.now().isoformat()
+        }
+
+def get_performance_level(analytics_data):
+    """Determine user's performance level"""
+    weekly_stats = analytics_data.get('weeklyStats', {})
+    completion_rate = weekly_stats.get('completionRate', 0)
+    average_focus = weekly_stats.get('averageFocus', 0)
+    total_sessions = weekly_stats.get('totalSessions', 0)
+    
+    if completion_rate >= 80 and average_focus >= 8 and total_sessions >= 5:
+        return "Excellent"
+    elif completion_rate >= 60 and average_focus >= 6 and total_sessions >= 3:
+        return "Good"
+    elif completion_rate >= 40 and total_sessions >= 1:
+        return "Improving"
+    else:
+        return "Getting Started"
+
+def get_focus_trend(analytics_data):
+    """Analyze focus trend"""
+    weekly_stats = analytics_data.get('weeklyStats', {})
+    average_focus = weekly_stats.get('averageFocus', 0)
+    
+    if average_focus >= 8:
+        return "Excellent focus levels"
+    elif average_focus >= 6:
+        return "Good focus, room for improvement"
+    elif average_focus >= 4:
+        return "Moderate focus, consider reducing distractions"
+    else:
+        return "Focus needs attention"
+
+def get_personalized_suggestions(analytics_data):
+    """Generate personalized suggestions"""
+    suggestions = []
+    weekly_stats = analytics_data.get('weeklyStats', {})
+    subject_progress = analytics_data.get('subjectProgress', {})
+    
+    completion_rate = weekly_stats.get('completionRate', 0)
+    average_focus = weekly_stats.get('averageFocus', 0)
+    total_sessions = weekly_stats.get('totalSessions', 0)
+    not_started = subject_progress.get('notStarted', 0)
+    
+    if completion_rate < 50:
+        suggestions.append("Try breaking study sessions into smaller, manageable chunks")
+    
+    if average_focus < 6:
+        suggestions.append("Consider using focus techniques like Pomodoro method")
+    
+    if total_sessions < 3:
+        suggestions.append("Aim for more consistent daily study sessions")
+    
+    if not_started > 0:
+        suggestions.append(f"You have {not_started} subjects waiting to be started")
+    
+    if not suggestions:
+        suggestions.append("Keep up the great work! Your study habits are on track")
+    
+    return suggestions
+
+def get_motivational_message(analytics_data):
+    """Generate motivational message based on progress"""
+    weekly_stats = analytics_data.get('weeklyStats', {})
+    total_sessions = weekly_stats.get('totalSessions', 0)
+    completion_rate = weekly_stats.get('completionRate', 0)
+    
+    if total_sessions == 0:
+        return "Every expert was once a beginner. Start your first study session today!"
+    elif completion_rate >= 80:
+        return "Outstanding progress! You're developing excellent study habits."
+    elif completion_rate >= 60:
+        return "Great momentum! Keep pushing forward toward your goals."
+    elif completion_rate >= 40:
+        return "Good progress! Every session brings you closer to success."
+    else:
+        return "Remember: Progress, not perfection. Every small step counts!"
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage, current_user: dict = Depends(get_current_user)):
     """Main chat endpoint for processing user messages"""
@@ -265,6 +556,44 @@ async def chat(message: ChatMessage, current_user: dict = Depends(get_current_us
         
     except Exception as e:
         logger.error(f"Error processing chat message: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing message: {str(e)}"
+        )
+
+@app.post("/chat/demo", response_model=ChatResponse)
+async def chat_demo(message: ChatMessage):
+    """Demo chat endpoint that doesn't require authentication"""
+    try:
+        logger.info(f"Processing demo message: {message.message}")
+        
+        # Create a demo user for testing (no authentication)
+        demo_user = {
+            'user_id': 'demo_user',
+            'email': 'demo@example.com',
+            'firstName': 'Demo',
+            'lastName': 'User'
+        }
+        
+        # Process the message through NLP
+        processed_message = nlp_processor.process(message.message)
+        
+        # Classify intent
+        intent_result = intent_classifier.classify(processed_message)
+        
+        # Generate response based on intent
+        response_data = await generate_response(
+            message=message.message,
+            intent_result=intent_result,
+            processed_message=processed_message,
+            user_data=demo_user,
+            conversation_id=message.conversation_id or "demo_conversation"
+        )
+        
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"Error processing demo chat message: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing message: {str(e)}"
@@ -328,26 +657,43 @@ async def generate_response(
     if not conversation_id:
         conversation_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{user_data['user_id']}"
     
-    # Check for main menu triggers
-    if any(keyword in message.lower() for keyword in ["main menu", "start over", "help", "what can you do"]):
+    # Check for main menu triggers (keep structured menu accessible)
+    if any(keyword in message.lower() for keyword in ["show menu", "main menu", "menu"]):
         clear_conversation_state(user_id)
         return show_main_menu()
     
-    # Check for specific action triggers
-    if any(keyword in message.lower() for keyword in ["add subject", "new subject", "create subject"]):
+    # Check for help/start over triggers (show intelligent welcome)
+    if any(keyword in message.lower() for keyword in ["start over", "help", "what can you do", "hello", "hi"]):
+        clear_conversation_state(user_id)
+        auth_token = user_data.get('auth_token') if user_data else None
+        return await show_intelligent_welcome(user_id, auth_token)
+    
+    # Check for specific action triggers (prioritize these over intent classification)
+    message_lower = message.lower().strip()
+    
+    if any(keyword in message_lower for keyword in ["add subject", "new subject", "create subject"]):
+        logger.info(f"Detected subject creation keywords in: {message}")
         return await start_add_subject_flow(user_id, user_data)
     
-    if any(keyword in message.lower() for keyword in ["create schedule", "new schedule", "generate schedule", "prioritized schedule", "AI schedule"]):
+    if any(keyword in message_lower for keyword in ["create schedule", "new schedule", "generate schedule", "prioritized schedule", "AI schedule", "schedule generation"]):
+        logger.info(f"Detected schedule creation keywords in: {message}")
         return await start_create_schedule_flow(user_id, user_data)
+    
+    # Check for prioritization-related keywords (EXACT MATCH FIRST)
+    if message.lower().strip() == "what should i study":
+        logger.info(f"Exact match for recommendation button: {message}")
+        return await handle_study_recommendation_request(user_id, message, user_data)
     
     # Check for prioritization-related keywords
     prioritization_keywords = [
         "recommend", "suggestion", "what should I study", "next subject", 
         "optimal", "best subject", "prioritize", "most important",
-        "deadline", "urgent", "high priority", "AI recommend"
+        "deadline", "urgent", "high priority", "AI recommend",
+        "get recommendation", "study recommendation"
     ]
     
     if any(keyword in message.lower() for keyword in prioritization_keywords):
+        logger.info(f"Detected prioritization keywords in: {message}")
         return await handle_study_recommendation_request(user_id, message, user_data)
     
     # Check for feedback-related keywords
@@ -359,6 +705,33 @@ async def generate_response(
     if any(keyword in message.lower() for keyword in feedback_keywords):
         return await handle_feedback_collection_request(user_id, message, user_data)
     
+    # Check for schedule viewing keywords
+    schedule_view_keywords = [
+        "show my current schedules", "show my schedules", "view my schedules", 
+        "view schedule", "view my schedule", "current schedules", "my schedules",
+        "show schedules", "display schedules", "list schedules"
+    ]
+    
+    if any(keyword in message.lower() for keyword in schedule_view_keywords):
+        logger.info(f"Detected schedule viewing keywords in: {message}")
+        return await handle_get_schedule_intent({}, user_data, conversation_id, 1.0)
+    
+    # Check for progress viewing keywords
+    progress_keywords = [
+        "show my study progress", "view progress", "my progress", "study progress",
+        "how am i doing", "progress report", "analytics", "statistics", "stats",
+        "completion rate", "focus score", "study time", "performance"
+    ]
+    
+    if any(keyword in message.lower() for keyword in progress_keywords):
+        logger.info(f"Detected progress viewing keywords in: {message}")
+        return await handle_progress_request(user_data, conversation_id)
+    
+    # Check for schedule selection messages (e.g., "Show sessions for Mathematics Schedule")
+    if "show sessions for" in message_lower:
+        schedule_name = message_lower.replace("show sessions for", "").strip()
+        return await handle_schedule_selection(schedule_name, user_data, conversation_id)
+
     # Handle different intents if no specific flow detected
     if intent == 'create_schedule':
         return await start_create_schedule_flow(user_id, user_data)
@@ -367,9 +740,27 @@ async def generate_response(
     elif intent == 'get_schedule':
         return await handle_get_schedule_intent(entities, user_data, conversation_id, confidence)
     elif intent == 'general_question':
-        return await handle_general_question_intent(message, user_data, conversation_id, confidence)
+        # Handle general questions with helpful responses
+        return ChatResponse(
+            response="🤖 **I'm here to help with your study planning!**\n\nI can help you:\n• Create and manage subjects\n• Generate AI-optimized study schedules\n• Get study recommendations\n• Track your progress\n\nWhat would you like to do?",
+            intent="general_help",
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=conversation_id,
+            quick_actions=[],  # No buttons - encourage natural language
+            suggestions=[
+                "Add a new subject called Biology",
+                "Create a schedule for this week", 
+                "What should I study right now?",
+                "Show my progress in mathematics",
+                "Show menu"
+            ]
+        )
     else:
-        # Show main menu for unclear requests
+        # Show intelligent welcome for unclear requests
+        auth_token = user_data.get('auth_token') if user_data else None
+        return await show_intelligent_welcome(user_data.get('user_id') if user_data else None, auth_token)
         return show_main_menu()
 
 async def handle_conversation_flow(message: str, user_id: str, conversation_state: dict, user_data: dict):
@@ -421,9 +812,10 @@ async def handle_conversation_flow(message: str, user_id: str, conversation_stat
     elif step == "feedback_completion":
         return await handle_feedback_completion_step(message, user_id, data, user_data)
     
-    # Fallback to main menu
+    # Fallback to intelligent welcome
     clear_conversation_state(user_id)
-    return show_main_menu()
+    auth_token = user_data.get('auth_token') if user_data else None
+    return await show_intelligent_welcome(user_data.get('user_id') if user_data else None, auth_token)
 
 # ================== SUBJECT ADDITION FLOW ==================
 
@@ -721,24 +1113,20 @@ async def handle_subject_confirm_step(message: str, user_id: str, data: dict, us
     if response_text in ["yes", "confirm", "create", "save"]:
         # Create the subject using enhanced prioritization API
         try:
-            # Map difficulty and priority to numbers for prioritization engine
-            difficulty_map = {"beginner": 1, "intermediate": 2, "advanced": 3}
-            priority_map = {"low": 1, "medium": 2, "high": 3}
-            
             subject_data = {
                 "name": data['name'],
                 "description": data.get('description', ''),
-                "difficulty": difficulty_map.get(data['difficulty'], 1),
-                "priority": priority_map.get(data['priority'], 2),
+                "difficulty": data['difficulty'],  # Keep as string for backend validation
+                "priority": data['priority'],      # Keep as string for backend validation
                 "category": data['category'],
-                "estimated_hours": data['estimatedHours'],
+                "estimatedHours": data['estimatedHours'],  # Correct field name
                 "deadline": data.get('deadline'),  # Include deadline
                 "tags": data.get('tags', [])
             }
             
-            # Use enhanced prioritization API
+            # Use enhanced prioritization API - works for both demo and real users
             result = await backend_client.post(
-                f"/add_subject",  # Use the new prioritization endpoint
+                f"/subjects",  # Backend client already includes /api prefix
                 data=subject_data,
                 headers={"Authorization": f"Bearer {user_data.get('token', '')}"}
             )
@@ -918,11 +1306,176 @@ async def handle_modify_schedule_intent(entities, user_data, conversation_id, co
         ]
     )
 
+async def handle_progress_request(user_data, conversation_id):
+    """Handle user progress analytics requests with comprehensive insights"""
+    try:
+        # Get analytics data from the backend
+        analytics_data = await backend_client.get_analytics(user_data['user_id'], user_data.get('token', ''))
+        
+        # Check user's preference for daily/weekly view (could be passed as parameter or stored)
+        # For now, we'll provide both views or make it smart based on the data
+        
+        if not analytics_data:
+            return ChatResponse(
+                response="📊 **Your Study Progress Dashboard**\n\n"
+                       "🚀 **Getting Started!**\n"
+                       "I notice you haven't started tracking your study sessions yet. Here's how to begin:\n\n"
+                       "• Add your first subject\n"
+                       "• Create a study schedule\n"
+                       "• Complete some study sessions\n\n"
+                       "Once you have some data, I'll provide detailed analytics about:\n"
+                       "📈 Study time trends\n"
+                       "🎯 Completion rates\n"
+                       "🧠 Focus scores\n"
+                       "⚡ Progress velocity\n\n"
+                       "Ready to get started?",
+                intent='view_progress',
+                confidence=1.0,
+                entities={},
+                actions=[],
+                conversation_id=conversation_id,
+                quick_actions=[
+                    {"id": "add-subject", "label": "📝 Add Subject", "icon": "plus", "message": "add subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                    {"id": "create-schedule", "label": "📅 Create Schedule", "icon": "calendar", "message": "create schedule", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                    {"id": "daily-view", "label": "📅 Daily View", "icon": "calendar", "message": "show my daily progress", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
+                    {"id": "main-menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+                ],
+                suggestions=["Add my first subject", "Create study schedule", "Show daily progress", "Main menu"]
+            )
+        
+        # Extract key metrics from analytics
+        weekly_stats = analytics_data.get('weeklyStats', {})
+        subject_progress = analytics_data.get('subjectProgress', {})
+        
+        total_study_time = weekly_stats.get('totalStudyTime', 0)
+        total_sessions = weekly_stats.get('totalSessions', 0)
+        completion_rate = weekly_stats.get('completionRate', 0)
+        average_focus = weekly_stats.get('averageFocus', 0)
+        daily_study_time = weekly_stats.get('dailyStudyTime', [0, 0, 0, 0, 0, 0, 0])
+        
+        # Calculate daily analytics
+        today_index = (datetime.now().weekday()) % 7  # Monday = 0
+        todays_study_time = daily_study_time[today_index] if len(daily_study_time) > today_index else 0
+        daily_goal = 120  # 2 hours in minutes
+        
+        # Convert minutes to hours for display
+        study_hours = total_study_time / 60 if total_study_time > 0 else 0
+        todays_hours = todays_study_time / 60 if todays_study_time > 0 else 0
+        
+        # Calculate daily average
+        daily_average = study_hours / 7 if study_hours > 0 else 0
+        
+        # Build comprehensive progress report with both daily and weekly insights
+        response_text = "📊 **Your Study Progress Dashboard**\n\n"
+        
+        # Today's Snapshot
+        response_text += "📅 **Today's Snapshot:**\n"
+        response_text += f"⏰ **Study Time Today:** {todays_hours:.1f} hours\n"
+        response_text += f"🎯 **Daily Goal Progress:** {min(100, (todays_study_time / daily_goal) * 100):.0f}%\n"
+        time_remaining = max(0, daily_goal - todays_study_time)
+        response_text += f"⏳ **Time to Goal:** {time_remaining // 60}h {time_remaining % 60}m remaining\n\n"
+        
+        # Weekly Overview
+        response_text += "📈 **This Week's Performance:**\n"
+        response_text += f"⏱️ **Total Study Time:** {study_hours:.1f} hours ({daily_average:.1f}h/day)\n"
+        response_text += f"📚 **Sessions:** {total_sessions} completed\n"
+        response_text += f"🎯 **Completion Rate:** {completion_rate:.0f}%\n"
+        response_text += f"🧠 **Focus Score:** {average_focus:.1f}/10\n\n"
+        
+        # Subject progress overview
+        if subject_progress.get('total', 0) > 0:
+            response_text += "📚 **Subject Progress:**\n"
+            response_text += f"✅ **Completed:** {subject_progress.get('completed', 0)} subjects\n"
+            response_text += f"🔄 **In Progress:** {subject_progress.get('inProgress', 0)} subjects\n"
+            response_text += f"📝 **Not Started:** {subject_progress.get('notStarted', 0)} subjects\n\n"
+            
+            # Show top performing subjects
+            subject_details = subject_progress.get('details', [])
+            if subject_details:
+                top_subjects = sorted(subject_details, key=lambda x: x.get('progress', 0), reverse=True)[:3]
+                response_text += "🏆 **Top Performing Subjects:**\n"
+                for subject in top_subjects:
+                    progress = subject.get('progress', 0)
+                    name = subject.get('name', 'Unknown')
+                    response_text += f"• {name}: {progress}% complete\n"
+                response_text += "\n"
+        
+        # Performance insights and recommendations
+        response_text += "💡 **Insights & Recommendations:**\n"
+        
+        # Daily-specific insights
+        if todays_study_time > 0:
+            response_text += f"🌟 You've studied {todays_hours:.1f} hours today - great progress!\n"
+        else:
+            response_text += "📚 Ready to start your first study session today?\n"
+        
+        # Weekly patterns
+        if completion_rate >= 80:
+            response_text += "🎉 Excellent consistency! You're crushing your study goals.\n"
+        elif completion_rate >= 60:
+            response_text += "👍 Good progress! Try to maintain this momentum.\n"
+        elif completion_rate > 0:
+            response_text += "💪 Keep building your study habits - every session counts!\n"
+        
+        if average_focus >= 8:
+            response_text += "🧠 Outstanding focus levels! Your deep work is paying off.\n"
+        elif average_focus >= 6:
+            response_text += "🎯 Solid focus during sessions. Consider minimizing distractions.\n"
+        elif average_focus > 0:
+            response_text += "📱 Try reducing distractions to improve focus scores.\n"
+        
+        # Add motivational closing
+        if total_sessions > 0:
+            response_text += f"\n🚀 **Keep it up!** You've built momentum with {total_sessions} sessions this week!"
+        
+        return ChatResponse(
+            response=response_text,
+            intent='view_progress',
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=conversation_id,
+            quick_actions=[
+                {"id": "daily-focus", "label": "� Daily Focus", "icon": "calendar", "message": "show today's progress only", "color": "bg-orange-600 hover:bg-orange-700 text-white"},
+                {"id": "weekly-trends", "label": "📊 Weekly Trends", "icon": "trending-up", "message": "show weekly analytics", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                {"id": "set-goals", "label": "🎯 Set Goals", "icon": "target", "message": "help me set study goals", "color": "bg-purple-600 hover:bg-purple-700 text-white"},
+                {"id": "study-recommendations", "label": "💡 Get Recommendations", "icon": "lightbulb", "message": "what should I study", "color": "bg-green-600 hover:bg-green-700 text-white"},
+                {"id": "main-menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+            ],
+            suggestions=[
+                "Show today's progress only",
+                "Show weekly analytics", 
+                "What should I study next?",
+                "Set study goals",
+                "Main menu"
+            ]
+        )
+        
+    except Exception as e:
+        logger.error(f"Error handling progress request: {e}")
+        return ChatResponse(
+            response="❌ **Oops!** I encountered an issue while fetching your progress data.\n\n"
+                   "This might be because:\n"
+                   "• The analytics service is temporarily unavailable\n"
+                   "• There's a connection issue\n\n"
+                   "Please try again in a moment, or check the main dashboard for your progress statistics.",
+            intent='error',
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=conversation_id,
+            quick_actions=[
+                {"id": "retry-progress", "label": "🔄 Try Again", "icon": "refresh", "message": "Show my study progress", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
+                {"id": "main-menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
+            ],
+            suggestions=["Try again", "Main menu"]
+        )
+
 async def handle_get_schedule_intent(entities, user_data, conversation_id, confidence):
     """Handle schedule retrieval requests"""
     try:
         # Get user's current schedules
-        schedules = await backend_client.get_user_schedules(user_data['user_id'])
+        schedules = await backend_client.get_user_schedules(user_data['user_id'], user_data.get('token', ''))
         
         if not schedules:
             return ChatResponse(
@@ -943,33 +1496,233 @@ async def handle_get_schedule_intent(entities, user_data, conversation_id, confi
                 ]
             )
         
+        # Filter for active schedules only
         active_schedules = [s for s in schedules if s.get('status') == 'active']
         
-        if active_schedules:
-            schedule_info = f"You have {len(active_schedules)} active schedule(s). "
-            if len(active_schedules) == 1:
-                schedule_info += f"Your current schedule '{active_schedules[0]['name']}' has {len(active_schedules[0].get('sessions', []))} study sessions."
-            
+        if not active_schedules:
+            total_schedules = len(schedules)
             return ChatResponse(
-                response=schedule_info + " Would you like me to show you the details?",
+                response=f"You have {total_schedules} schedule(s) but none are currently active. Would you like to see all schedules or create a new one?",
                 intent='get_schedule',
                 confidence=confidence,
                 entities=entities,
-                actions=[{'type': 'show_schedule_details', 'schedules': active_schedules}],
-                conversation_id=conversation_id
+                conversation_id=conversation_id,
+                quick_actions=[
+                    {"id": "view-all", "label": "View All Schedules", "icon": "eye", "message": "Go to schedule page to view all schedules", "color": "bg-blue-500"},
+                    {"id": "create-new", "label": "Create New", "icon": "plus", "message": "Create a new study schedule", "color": "bg-green-500"}
+                ],
+                suggestions=[
+                    "Go to schedule page to view all schedules", 
+                    "Create a new active schedule"
+                ]
+            )
+        
+        if len(active_schedules) == 1:
+            # Single active schedule - show details and sessions
+            schedule = active_schedules[0]
+            schedule_id = schedule.get('_id')
+            
+            # Get sessions for this schedule
+            sessions = await backend_client.get_schedule_sessions(schedule_id, user_data.get('token', ''))
+            
+            # Filter for active/pending sessions
+            active_sessions = [s for s in sessions if s.get('status') in ['scheduled', 'in_progress']]
+            completed_sessions = [s for s in sessions if s.get('status') == 'completed']
+            
+            response_text = f"📅 **{schedule['name']}**\n\n"
+            response_text += f"📊 **Progress:** {len(completed_sessions)}/{len(sessions)} sessions completed\n\n"
+            
+            if active_sessions:
+                response_text += f"🎯 **Active Sessions ({len(active_sessions)}):**\n"
+                for i, session in enumerate(active_sessions[:3], 1):  # Show max 3 sessions
+                    subject = session.get('subjectName', 'Unknown Subject')
+                    start_time = session.get('startTime', '')
+                    status = session.get('status', 'scheduled').title()
+                    response_text += f"{i}. {subject} - {status}\n"
+                
+                if len(active_sessions) > 3:
+                    response_text += f"   ... and {len(active_sessions) - 3} more sessions\n"
+            else:
+                response_text += "✅ All sessions completed for this schedule!\n"
+            
+            response_text += f"\n💡 To view all schedules, visit the Schedule page."
+            
+            return ChatResponse(
+                response=response_text,
+                intent='get_schedule',
+                confidence=confidence,
+                entities=entities,
+                actions=[{'type': 'show_schedule_sessions', 'schedule': schedule, 'sessions': active_sessions}],
+                conversation_id=conversation_id,
+                quick_actions=[
+                    {"id": "view-all-schedules", "label": "All Schedules", "icon": "calendar", "message": "Go to schedule page", "color": "bg-blue-500"},
+                    {"id": "start-session", "label": "Start Session", "icon": "play", "message": "Start a study session", "color": "bg-green-500"}
+                ],
+                suggestions=[
+                    "Go to schedule page",
+                    "Start next study session",
+                    "Update session status"
+                ]
+            )
+        
+        else:
+            # Multiple active schedules - show list for selection
+            response_text = f"You have {len(active_schedules)} active schedules:\n\n"
+            
+            schedule_options = []
+            for i, schedule in enumerate(active_schedules, 1):
+                schedule_name = schedule.get('name', f'Schedule {i}')
+                created_date = schedule.get('createdAt', '')
+                response_text += f"{i}. **{schedule_name}**"
+                if created_date:
+                    try:
+                        date_obj = datetime.fromisoformat(created_date.replace('Z', '+00:00'))
+                        response_text += f" (Created: {date_obj.strftime('%b %d, %Y')})"
+                    except:
+                        pass
+                response_text += "\n"
+                
+                # Add quick action for each schedule
+                schedule_options.append({
+                    "id": f"select-schedule-{schedule.get('_id')}", 
+                    "label": f"{schedule_name[:15]}...", 
+                    "icon": "calendar", 
+                    "message": f"Show sessions for {schedule_name}", 
+                    "color": "bg-purple-500"
+                })
+            
+            response_text += f"\n💡 Select a schedule to view its active sessions.\n"
+            response_text += f"📋 To manage all schedules, visit the Schedule page."
+            
+            return ChatResponse(
+                response=response_text,
+                intent='get_schedule',
+                confidence=confidence,
+                entities=entities,
+                actions=[{'type': 'select_schedule', 'schedules': active_schedules}],
+                conversation_id=conversation_id,
+                quick_actions=schedule_options[:4] + [  # Limit to 4 schedule options plus navigation
+                    {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+                ],
+                suggestions=[
+                    "Go to schedule page",
+                    "Show me the most recent schedule",
+                    "Which schedule should I work on today?"
+                ]
             )
         
     except Exception as e:
         logger.error(f"Error fetching schedules: {e}")
-    
-    return ChatResponse(
-        response="Let me check your current schedules for you.",
-        intent='get_schedule',
-        confidence=confidence,
-        entities=entities,
-        actions=[{'type': 'fetch_schedules'}],
-        conversation_id=conversation_id
-    )
+        return ChatResponse(
+            response="I'm having trouble accessing your schedules right now. Please try again or visit the Schedule page directly.",
+            intent='get_schedule',
+            confidence=confidence,
+            entities=entities,
+            actions=[{'type': 'error_fetching_schedules'}],
+            conversation_id=conversation_id,
+            quick_actions=[
+                {"id": "retry-schedules", "label": "Try Again", "icon": "refresh", "message": "view my schedule", "color": "bg-orange-500"},
+                {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+            ],
+            suggestions=[
+                "Try again",
+                "Go to schedule page"
+            ]
+        )
+
+async def handle_schedule_selection(schedule_name, user_data, conversation_id):
+    """Handle when user selects a specific schedule to view sessions"""
+    try:
+        # Get user's schedules to find the selected one
+        schedules = await backend_client.get_user_schedules(user_data['user_id'], user_data.get('token', ''))
+        
+        # Find the selected schedule
+        selected_schedule = None
+        for schedule in schedules:
+            if schedule.get('name') == schedule_name or schedule_name in schedule.get('name', ''):
+                selected_schedule = schedule
+                break
+        
+        if not selected_schedule:
+            return ChatResponse(
+                response=f"I couldn't find the schedule '{schedule_name}'. Would you like to see all your schedules?",
+                intent='schedule_selection',
+                confidence=0.9,
+                entities={'schedule_name': schedule_name},
+                conversation_id=conversation_id,
+                quick_actions=[
+                    {"id": "view-schedules", "label": "View Schedules", "icon": "calendar", "message": "view my schedules", "color": "bg-blue-500"},
+                    {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+                ]
+            )
+        
+        # Get sessions for the selected schedule
+        schedule_id = selected_schedule.get('_id')
+        sessions = await backend_client.get_schedule_sessions(schedule_id, user_data.get('token', ''))
+        
+        # Filter sessions by status
+        active_sessions = [s for s in sessions if s.get('status') in ['scheduled', 'in_progress']]
+        completed_sessions = [s for s in sessions if s.get('status') == 'completed']
+        
+        # Build response
+        response_text = f"📅 **{selected_schedule['name']}**\n\n"
+        response_text += f"📊 **Progress:** {len(completed_sessions)}/{len(sessions)} sessions completed\n\n"
+        
+        if active_sessions:
+            response_text += f"🎯 **Active Sessions ({len(active_sessions)}):**\n"
+            for i, session in enumerate(active_sessions, 1):
+                subject = session.get('subjectName', 'Unknown Subject')
+                start_time = session.get('startTime', '')
+                status = session.get('status', 'scheduled').title()
+                
+                # Format time if available
+                time_str = ""
+                if start_time:
+                    try:
+                        time_obj = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                        time_str = f" at {time_obj.strftime('%I:%M %p')}"
+                    except:
+                        pass
+                
+                response_text += f"{i}. **{subject}** - {status}{time_str}\n"
+        else:
+            response_text += "✅ **All sessions completed!** Great job!\n"
+        
+        response_text += f"\n💡 **Want to see all schedules?** Visit the Schedule page for complete schedule management."
+        
+        return ChatResponse(
+            response=response_text,
+            intent='schedule_selection',
+            confidence=0.95,
+            entities={'schedule_name': schedule_name, 'schedule_id': schedule_id},
+            actions=[{'type': 'show_schedule_sessions', 'schedule': selected_schedule, 'sessions': active_sessions}],
+            conversation_id=conversation_id,
+            quick_actions=[
+                {"id": "start-session", "label": "Start Session", "icon": "play", "message": "Start next study session", "color": "bg-green-500"},
+                {"id": "view-all-schedules", "label": "All Schedules", "icon": "calendar", "message": "view my schedules", "color": "bg-blue-500"},
+                {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+            ],
+            suggestions=[
+                "Start next study session",
+                "View all my schedules", 
+                "Go to schedule page",
+                "Mark session as completed"
+            ]
+        )
+        
+    except Exception as e:
+        logger.error(f"Error handling schedule selection: {e}")
+        return ChatResponse(
+            response="I'm having trouble loading the schedule details. Please try again or visit the Schedule page.",
+            intent='schedule_selection',
+            confidence=0.8,
+            entities={'schedule_name': schedule_name},
+            conversation_id=conversation_id,
+            quick_actions=[
+                {"id": "retry-selection", "label": "Try Again", "icon": "refresh", "message": f"Show sessions for {schedule_name}", "color": "bg-orange-500"},
+                {"id": "goto-schedule-page", "label": "Schedule Page", "icon": "external-link", "message": "Go to schedule page", "color": "bg-blue-600"}
+            ]
+        )
 
 async def handle_general_question_intent(message, user_data, conversation_id, confidence):
     """Handle general questions and greetings"""
@@ -2101,7 +2854,7 @@ async def handle_study_recommendation_request(user_id: str, message: str, user_d
                     intent="study_recommendation",
                     confidence=confidence,
                     entities={"recommended_subject": subject},
-                    actions=["start_session", "get_different_recommendation"],
+                    actions=[{"type": "start_session"}, {"type": "get_different_recommendation"}],
                     conversation_id=f"recommendation_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                     quick_actions=[
                         {"id": "start_session", "label": "▶️ Start Session", "icon": "play", "message": f"start session for {subject.get('name', 'this subject')}", "color": "bg-green-600 hover:bg-green-700 text-white"},
@@ -2115,7 +2868,7 @@ async def handle_study_recommendation_request(user_id: str, message: str, user_d
                     intent="no_subjects_available",
                     confidence=1.0,
                     entities={},
-                    actions=["add_subject"],
+                    actions=[{"type": "add_subject"}],
                     conversation_id=f"recommendation_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                     quick_actions=[
                         {"id": "add_subject", "label": "➕ Add Subject", "icon": "plus", "message": "add subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
@@ -2128,7 +2881,7 @@ async def handle_study_recommendation_request(user_id: str, message: str, user_d
                 intent="recommendation_error",
                 confidence=1.0,
                 entities={},
-                actions=["retry", "main_menu"],
+                actions=[{"type": "retry"}, {"type": "main_menu"}],
                 conversation_id=f"recommendation_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 quick_actions=[
                     {"id": "retry", "label": "🔄 Try Again", "icon": "refresh", "message": "recommend subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
@@ -2143,7 +2896,7 @@ async def handle_study_recommendation_request(user_id: str, message: str, user_d
             intent="recommendation_error",
             confidence=1.0,
             entities={},
-            actions=["retry", "main_menu"],
+            actions=[{"type": "retry"}, {"type": "main_menu"}],
             conversation_id=f"recommendation_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             quick_actions=[
                 {"id": "retry", "label": "🔄 Try Again", "icon": "refresh", "message": "recommend subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
@@ -2411,6 +3164,48 @@ async def handle_feedback_completion_step(message: str, user_id: str, data: dict
                 {"id": "main_menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
             ]
         )
+
+# ================== ANALYTICS ENDPOINT ==================
+
+@app.get("/analytics/chatbot")
+async def get_chatbot_analytics():
+    """Get chatbot usage analytics for dashboard integration"""
+    try:
+        # Get conversation statistics
+        total_conversations = len(conversation_states)
+        active_conversations = sum(1 for state in conversation_states.values() 
+                                 if (datetime.now() - state.get('last_activity', datetime.now())).seconds < 3600)
+        
+        # Calculate simple metrics (in a real implementation, these would come from a database)
+        analytics_data = {
+            "total_interactions": total_conversations,
+            "active_conversations": active_conversations,
+            "average_response_time": 1.2,  # Simulated response time in seconds
+            "user_engagement_score": min(1.0, total_conversations / 50),  # Engagement out of 1.0
+            "popular_intents": [
+                {"intent": "get_schedule", "count": 25},
+                {"intent": "add_subject", "count": 18},
+                {"intent": "create_schedule", "count": 12},
+                {"intent": "study_recommendation", "count": 30}
+            ],
+            "session_completion_rate": 0.75,  # 75% of conversations reach completion
+            "last_updated": datetime.now().isoformat(),
+            "server_status": "healthy"
+        }
+        
+        return {
+            "success": True,
+            "analytics": analytics_data,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting chatbot analytics: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 # Update the conversation step enum to include deadline step
 class ConversationStep:

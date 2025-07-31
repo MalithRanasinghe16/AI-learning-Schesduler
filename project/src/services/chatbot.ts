@@ -14,15 +14,18 @@ const chatbotApi = axios.create({
   timeout: 10000,
 });
 
-// Add request/response interceptors for debugging
+// Add request/response interceptors for debugging and auth
 chatbotApi.interceptors.request.use((request) => {
-  // Only log in development
+  // Add auth token if available
+  const token = localStorage.getItem("token");
+  if (token) {
+    request.headers.Authorization = `Bearer ${token}`;
+  }
   return request;
 });
 
 chatbotApi.interceptors.response.use(
   (response) => {
-    // Only log in development
     return response;
   },
   (error) => {
@@ -30,6 +33,20 @@ chatbotApi.interceptors.response.use(
       `Chatbot API Error: ${error.response?.status} ${error.config?.url}`,
       error.message
     );
+
+    // Add more descriptive error messages
+    if (error.code === "ECONNREFUSED") {
+      error.userMessage =
+        "Chatbot service is not running. Please start the chatbot server.";
+    } else if (error.response?.status === 401) {
+      error.userMessage = "Authentication failed. Please log in again.";
+    } else if (error.response?.status === 500) {
+      error.userMessage = "Chatbot server error. Please try again later.";
+    } else {
+      error.userMessage =
+        "Failed to connect to chatbot. Please check your connection.";
+    }
+
     return Promise.reject(error);
   }
 );
@@ -45,8 +62,22 @@ export const chatbotService = {
    * Send a chat message to the FastAPI chatbot
    */
   sendMessage: async (request: ChatRequest): Promise<ChatResponse> => {
-    const response = await chatbotApi.post<ChatResponse>("/chat", request);
-    return response.data;
+    try {
+      // Try authenticated endpoint first
+      const response = await chatbotApi.post<ChatResponse>("/chat", request);
+      return response.data;
+    } catch (error: any) {
+      // If authentication fails, try demo endpoint
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.log("Using demo endpoint due to authentication issue");
+        const response = await chatbotApi.post<ChatResponse>(
+          "/chat/demo",
+          request
+        );
+        return response.data;
+      }
+      throw error;
+    }
   },
 
   /**

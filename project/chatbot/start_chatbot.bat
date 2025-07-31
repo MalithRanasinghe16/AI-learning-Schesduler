@@ -8,9 +8,11 @@ REM Check if virtual environment exists
 if not exist "chatbot_env\Scripts\python.exe" (
     echo Error: Virtual environment not found!
     echo Creating virtual environment...
-    python -m venv chatbot_env
+    py -m venv chatbot_env
     echo Installing requirements...
     chatbot_env\Scripts\pip.exe install -r requirements.txt
+    echo Installing spaCy English model...
+    chatbot_env\Scripts\python.exe -m spacy download en_core_web_sm
 )
 
 REM Start the chatbot directly

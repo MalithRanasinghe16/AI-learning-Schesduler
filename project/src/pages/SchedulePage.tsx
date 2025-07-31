@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import {
   Calendar,
   Clock,
-  Plus,
   Edit3,
   Check,
   X,
@@ -11,13 +10,16 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Brain,
   Star,
   Target,
+  Trash2,
+  Eye,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { Schedule, ScheduleBlock, Subject } from "../types";
 import { toast } from "react-toastify";
+import { apiService } from "../services/api";
 
 const SchedulePage: React.FC = () => {
   const { user } = useAuth();
@@ -27,16 +29,9 @@ const SchedulePage: React.FC = () => {
     null
   );
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("active");
+  const [filterCompletion, setFilterCompletion] = useState<string>("active"); // New filter for completed schedules
   const [searchTerm, setSearchTerm] = useState("");
-  const [showManualForm, setShowManualForm] = useState(false);
-  const [manualForm, setManualForm] = useState({
-    name: "",
-    subjectIds: [] as string[],
-    start_date: "",
-    end_date: "",
-    daily_hours: 4,
-  });
 
   // Fetch schedules and subjects
   useEffect(() => {
@@ -73,11 +68,60 @@ const SchedulePage: React.FC = () => {
         const schedulesData = await schedulesResponse.json();
         const subjectsData = await subjectsResponse.json();
 
-        setSchedules(schedulesData);
-        setSubjects(subjectsData);
+        console.log("📅 Schedules response:", schedulesData);
+        console.log("📚 Subjects response:", subjectsData);
 
-        if (schedulesData.length > 0) {
-          setSelectedSchedule(schedulesData[0]);
+        // Handle the response format from backend
+        const schedules = schedulesData.schedules || schedulesData;
+        const subjects = subjectsData.subjects || subjectsData;
+
+        // Fetch real-time schedule sessions for each schedule
+        const schedulesWithSessions = await Promise.all(
+          schedules.map(async (schedule: Schedule) => {
+            try {
+              const sessionsResponse = await fetch(
+                `http://localhost:5000/api/schedule-sessions?scheduleId=${schedule._id}`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${localStorage.getItem("token")}`,
+                    "Content-Type": "application/json",
+                  },
+                }
+              );
+
+              if (sessionsResponse.ok) {
+                const sessionsData = await sessionsResponse.json();
+                console.log(
+                  `📊 Sessions for ${schedule.name}:`,
+                  sessionsData.sessions?.length || 0
+                );
+
+                // Replace blocks with real-time sessions
+                return {
+                  ...schedule,
+                  blocks: sessionsData.sessions || schedule.blocks || [],
+                };
+              } else {
+                console.warn(
+                  `Failed to fetch sessions for schedule ${schedule._id}, using existing blocks`
+                );
+                return schedule;
+              }
+            } catch (error) {
+              console.warn(
+                `Error fetching sessions for schedule ${schedule._id}:`,
+                error
+              );
+              return schedule;
+            }
+          })
+        );
+
+        setSchedules(schedulesWithSessions);
+        setSubjects(subjects);
+
+        if (schedulesWithSessions.length > 0) {
+          setSelectedSchedule(schedulesWithSessions[0]);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -159,15 +203,152 @@ const SchedulePage: React.FC = () => {
     fetchData();
   }, [user?._id]);
 
+  // Function to refresh schedule sessions for real-time updates
+  const refreshScheduleSessions = async (scheduleId?: string) => {
+    try {
+      if (scheduleId) {
+        // Refresh sessions for a specific schedule
+        const sessionsResponse = await fetch(
+          `http://localhost:5000/api/schedule-sessions?scheduleId=${scheduleId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (sessionsResponse.ok) {
+          const sessionsData = await sessionsResponse.json();
+
+          // Update the specific schedule with new sessions
+          setSchedules((prev) =>
+            prev.map((schedule) =>
+              schedule._id === scheduleId
+                ? {
+                    ...schedule,
+                    blocks: sessionsData.sessions || schedule.blocks || [],
+                  }
+                : schedule
+            )
+          );
+
+          // Update selected schedule if it's the one being refreshed
+          if (selectedSchedule?._id === scheduleId) {
+            setSelectedSchedule((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    blocks: sessionsData.sessions || prev.blocks || [],
+                  }
+                : null
+            );
+          }
+
+          console.log(`🔄 Refreshed sessions for schedule ${scheduleId}`);
+        }
+      } else {
+        // Refresh all schedules
+        const schedulesWithSessions = await Promise.all(
+          schedules.map(async (schedule: Schedule) => {
+            try {
+              const sessionsResponse = await fetch(
+                `http://localhost:5000/api/schedule-sessions?scheduleId=${schedule._id}`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${localStorage.getItem("token")}`,
+                    "Content-Type": "application/json",
+                  },
+                }
+              );
+
+              if (sessionsResponse.ok) {
+                const sessionsData = await sessionsResponse.json();
+                return {
+                  ...schedule,
+                  blocks: sessionsData.sessions || schedule.blocks || [],
+                };
+              }
+              return schedule;
+            } catch (error) {
+              console.warn(
+                `Error refreshing sessions for schedule ${schedule._id}:`,
+                error
+              );
+              return schedule;
+            }
+          })
+        );
+
+        setSchedules(schedulesWithSessions);
+
+        // Update selected schedule if needed
+        if (selectedSchedule) {
+          const updatedSelected = schedulesWithSessions.find(
+            (s) => s._id === selectedSchedule._id
+          );
+          if (updatedSelected) {
+            setSelectedSchedule(updatedSelected);
+          }
+        }
+
+        console.log("🔄 Refreshed all schedule sessions");
+      }
+    } catch (error) {
+      console.error("Error refreshing schedule sessions:", error);
+    }
+  };
+
+  // Listen for subject completion events to refresh sessions
+  useEffect(() => {
+    const handleSubjectCompletion = () => {
+      console.log(
+        "📡 Subject completion event received, refreshing sessions..."
+      );
+      refreshScheduleSessions();
+    };
+
+    // Add event listener for subject completion
+    window.addEventListener("subject-completed", handleSubjectCompletion);
+
+    return () => {
+      window.removeEventListener("subject-completed", handleSubjectCompletion);
+    };
+  }, [schedules, selectedSchedule]);
+
+  // Helper function to check if a subject is completed
+  const isSubjectCompleted = (
+    subjectId: string | { _id: string; name: string }
+  ) => {
+    const id = typeof subjectId === "string" ? subjectId : subjectId._id;
+    const subject = subjects.find((s) => s._id === id);
+    return subject?.isCompleted || (subject?.progress || 0) >= 100;
+  };
+
+  // Helper function to get subject completion styling
+  const getCompletionCardClasses = (block: ScheduleBlock) => {
+    const subjectId =
+      typeof block.subjectId === "string"
+        ? block.subjectId
+        : block.subjectId._id;
+    const isCompleted = isSubjectCompleted(subjectId);
+
+    if (isCompleted) {
+      return "bg-green-50 dark:bg-green-900/20 border-2 border-green-300 dark:border-green-600 rounded-lg shadow-md mb-4 opacity-75 transition-all duration-300";
+    }
+
+    return "bg-white dark:bg-gray-800 rounded-lg shadow-md mb-4 transition-all duration-300";
+  };
+
   const updateSessionStatus = async (
     blockId: string,
     newStatus: "scheduled" | "in-progress" | "completed" | "missed"
   ) => {
     try {
       const response = await fetch(
-        `http://localhost:5000/api/schedule-blocks/${blockId}/status`,
+        `http://localhost:5000/api/schedule-sessions/${blockId}/status`,
         {
-          method: "PUT",
+          method: "PATCH",
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token")}`,
             "Content-Type": "application/json",
@@ -184,9 +365,10 @@ const SchedulePage: React.FC = () => {
       setSchedules((prev) =>
         prev.map((schedule) => ({
           ...schedule,
-          blocks: schedule.blocks.map((block) =>
-            block._id === blockId ? { ...block, status: newStatus } : block
-          ),
+          blocks:
+            schedule.blocks?.map((block) =>
+              block._id === blockId ? { ...block, status: newStatus } : block
+            ) || [],
         }))
       );
 
@@ -195,57 +377,76 @@ const SchedulePage: React.FC = () => {
           prev
             ? {
                 ...prev,
-                blocks: prev.blocks.map((block) =>
-                  block._id === blockId
-                    ? { ...block, status: newStatus }
-                    : block
-                ),
+                blocks:
+                  prev.blocks?.map((block) =>
+                    block._id === blockId
+                      ? { ...block, status: newStatus }
+                      : block
+                  ) || [],
               }
             : null
         );
       }
 
       toast.success(`Session marked as ${newStatus}`);
+
+      // Trigger analytics refresh when session is completed
+      if (newStatus === "completed") {
+        window.dispatchEvent(new CustomEvent("analytics-refresh"));
+      }
     } catch (error) {
       console.error("Error updating session status:", error);
       toast.error("Failed to update session status");
     }
   };
 
-  const createManualSchedule = async () => {
-    try {
-      const response = await fetch("http://localhost:5000/api/schedules", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...manualForm,
-          created_by: "manual",
-        }),
-      });
+  const handleDeleteSchedule = async (
+    scheduleId: string,
+    scheduleName: string
+  ) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete "${scheduleName}"? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
 
-      if (!response.ok) {
-        throw new Error("Failed to create schedule");
+    try {
+      await apiService.deleteSchedule(scheduleId);
+
+      // Remove from local state
+      setSchedules((prev) =>
+        prev.filter((schedule) => schedule._id !== scheduleId)
+      );
+
+      // If this was the selected schedule, clear selection
+      if (selectedSchedule?._id === scheduleId) {
+        setSelectedSchedule(null);
       }
 
-      const newSchedule = await response.json();
-      setSchedules((prev) => [newSchedule, ...prev]);
-      setShowManualForm(false);
-      setManualForm({
-        name: "",
-        subjectIds: [],
-        start_date: "",
-        end_date: "",
-        daily_hours: 4,
-      });
-      toast.success("Manual schedule created successfully!");
+      toast.success(`Schedule "${scheduleName}" deleted successfully!`);
     } catch (error) {
-      console.error("Error creating schedule:", error);
-      toast.error("Failed to create schedule");
+      console.error("Error deleting schedule:", error);
+      toast.error("Failed to delete schedule");
     }
   };
+
+  // Helper function to determine if schedule is completed
+  const isScheduleCompleted = (schedule: Schedule): boolean => {
+    if (!schedule.blocks || schedule.blocks.length === 0) return false;
+    return schedule.blocks.every((block) => block.status === "completed");
+  };
+
+  // Filter schedules based on completion status
+  const filteredSchedules = schedules.filter((schedule) => {
+    if (filterCompletion === "active") {
+      return !isScheduleCompleted(schedule);
+    } else if (filterCompletion === "completed") {
+      return isScheduleCompleted(schedule);
+    }
+    return true; // "all" shows both
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -263,12 +464,19 @@ const SchedulePage: React.FC = () => {
   };
 
   const filteredBlocks =
-    selectedSchedule?.blocks.filter((block) => {
+    selectedSchedule?.blocks?.filter((block) => {
       const matchesStatus =
-        filterStatus === "all" || block.status === filterStatus;
+        filterStatus === "all" ||
+        (filterStatus === "active" && block.status !== "completed") ||
+        block.status === filterStatus;
       const matchesSearch =
         !searchTerm ||
-        block.subjectName.toLowerCase().includes(searchTerm.toLowerCase());
+        (block.subjectName &&
+          block.subjectName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (typeof block.subjectId === "object" &&
+          block.subjectId.name
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()));
       return matchesStatus && matchesSearch;
     }) || [];
 
@@ -295,70 +503,122 @@ const SchedulePage: React.FC = () => {
           </p>
         </div>
 
-        {/* Chatbot Notice and Manual Creation */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div className="bg-gradient-to-r from-indigo-500/20 to-cyan-500/20 border border-indigo-400/30 rounded-lg p-4">
-            <div className="flex items-center">
-              <Brain className="h-5 w-5 text-cyan-400 mr-3" />
-              <div>
-                <p className="text-sm font-medium text-white">
-                  Need an optimized schedule?
-                </p>
-                <p className="text-xs text-gray-300 mt-1">
-                  Use the AI chatbot to generate schedules with priority-based
-                  optimization.
-                </p>
+        {/* Schedule Filters */}
+        {schedules.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+            <div className="flex flex-col sm:flex-row gap-4 items-center">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Filter Schedules:
+              </h3>
+              <div className="relative">
+                <Eye className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <select
+                  value={filterCompletion}
+                  onChange={(e) => setFilterCompletion(e.target.value)}
+                  className="pl-10 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="active">Active Schedules</option>
+                  <option value="completed">Completed Schedules</option>
+                  <option value="all">All Schedules</option>
+                </select>
               </div>
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                Showing {filteredSchedules.length} of {schedules.length}{" "}
+                schedules
+                {filterCompletion === "active" && " (active only)"}
+                {filterCompletion === "completed" && " (completed only)"}
+              </span>
             </div>
           </div>
-
-          <div className="flex justify-end">
-            <button
-              onClick={() => setShowManualForm(true)}
-              className="bg-gradient-to-r from-purple-500 to-cyan-500 text-white px-6 py-3 rounded-lg hover:from-purple-600 hover:to-cyan-600 transition-all duration-300 flex items-center"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Create Manual Schedule
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Schedule Selector */}
-        {schedules.length > 0 && (
+        {filteredSchedules.length > 0 && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Select Schedule
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {schedules.map((schedule) => (
-                <button
+              {filteredSchedules.map((schedule) => (
+                <div
                   key={schedule._id}
-                  onClick={() => setSelectedSchedule(schedule)}
-                  className={`p-4 rounded-lg border-2 transition-all duration-300 text-left ${
+                  className={`p-4 rounded-lg border-2 transition-all duration-300 ${
                     selectedSchedule?._id === schedule._id
                       ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/50"
                       : "border-gray-300 dark:border-gray-600 hover:border-indigo-300"
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-900 dark:text-white">
-                      {schedule.name}
-                    </h4>
-                    {schedule.created_by === "chatbot" && (
-                      <Star className="h-4 w-4 text-yellow-500" />
-                    )}
+                  <div className="flex items-start justify-between mb-2">
+                    <button
+                      onClick={() => setSelectedSchedule(schedule)}
+                      className="flex-1 text-left"
+                    >
+                      <div className="flex items-center space-x-2 mb-2">
+                        <h4 className="font-medium text-gray-900 dark:text-white">
+                          {schedule.name}
+                        </h4>
+                        {schedule.created_by === "chatbot" && (
+                          <Star className="h-4 w-4 text-yellow-500" />
+                        )}
+                        {isScheduleCompleted(schedule) && (
+                          <div className="flex items-center space-x-1">
+                            <Check className="h-4 w-4 text-green-500" />
+                            <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+                              Completed
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {new Date(schedule.start_date).toLocaleDateString()} -{" "}
+                        {new Date(schedule.end_date).toLocaleDateString()}
+                      </p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {schedule.blocks?.length || 0} sessions •{" "}
+                        {schedule.daily_hours}h/day
+                      </p>
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleDeleteSchedule(schedule._id, schedule.name)
+                      }
+                      className="p-1 text-gray-400 hover:text-red-500 transition-colors ml-2"
+                      title="Delete schedule"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {new Date(schedule.start_date).toLocaleDateString()} -{" "}
-                    {new Date(schedule.end_date).toLocaleDateString()}
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {schedule.blocks.length} sessions • {schedule.daily_hours}
-                    h/day
-                  </p>
-                </button>
+                </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Empty State for Filtered Results */}
+        {schedules.length > 0 && filteredSchedules.length === 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6 text-center">
+            <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              No{" "}
+              {filterCompletion === "active"
+                ? "active"
+                : filterCompletion === "completed"
+                ? "completed"
+                : ""}{" "}
+              schedules found
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              {filterCompletion === "active" &&
+                "All your schedules are completed."}
+              {filterCompletion === "completed" &&
+                "You don't have any completed schedules yet."}
+            </p>
+            <button
+              onClick={() => setFilterCompletion("all")}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Show All Schedules
+            </button>
           </div>
         )}
 
@@ -377,128 +637,183 @@ const SchedulePage: React.FC = () => {
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
-                <div className="relative">
-                  <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="pl-10 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <select
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                      className="pl-10 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    >
+                      <option value="active">Active Sessions</option>
+                      <option value="all">All Sessions</option>
+                      <option value="scheduled">Scheduled</option>
+                      <option value="in-progress">In Progress</option>
+                      <option value="completed">Completed</option>
+                      <option value="missed">Missed</option>
+                    </select>
+                  </div>
+                  <button
+                    onClick={() =>
+                      refreshScheduleSessions(selectedSchedule?._id)
+                    }
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                    title="Refresh sessions"
                   >
-                    <option value="all">All Sessions</option>
-                    <option value="scheduled">Scheduled</option>
-                    <option value="in-progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="missed">Missed</option>
-                  </select>
+                    <RefreshCw className="w-4 h-4" />
+                    <span className="hidden sm:inline">Refresh</span>
+                  </button>
                 </div>
               </div>
             </div>
 
             {/* Schedule Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-              {filteredBlocks.map((block) => (
-                <div
-                  key={block._id}
-                  className="bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 overflow-hidden"
-                >
-                  <div className="p-6">
-                    {/* Session Header */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                          {block.subjectName}
-                        </h3>
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                              block.status
-                            )}`}
-                          >
-                            {block.status}
-                          </span>
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-                            <Target className="h-3 w-3 inline mr-1" />
-                            Score: {block.priority_score}
-                          </span>
+              {filteredBlocks.map((block) => {
+                const isCompleted = isSubjectCompleted(block.subjectId);
+                return (
+                  <div
+                    key={block._id}
+                    className={getCompletionCardClasses(block)}
+                  >
+                    <div className="p-6">
+                      {/* Session Header */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                              {block.subjectName ||
+                                (block.subjectId &&
+                                typeof block.subjectId === "object"
+                                  ? block.subjectId.name
+                                  : "Unknown Subject")}
+                            </h3>
+                            {isCompleted && (
+                              <span className="px-2 py-1 bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 text-xs font-medium rounded-full flex items-center gap-1">
+                                <Star className="w-3 h-3 fill-current" />
+                                Subject Completed
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                                block.status
+                              )}`}
+                            >
+                              {block.status}
+                            </span>
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                              <Target className="h-3 w-3 inline mr-1" />
+                              Score: {block.priority_score}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Session Details */}
-                    <div className="space-y-3 mb-4">
-                      <div className="flex items-center text-gray-600 dark:text-gray-400">
-                        <Calendar className="h-4 w-4 mr-2" />
-                        {new Date(block.date).toLocaleDateString()}
+                      {/* Session Details */}
+                      <div className="space-y-3 mb-4">
+                        <div className="flex items-center text-gray-600 dark:text-gray-400">
+                          <Calendar className="h-4 w-4 mr-2" />
+                          {block.startTime
+                            ? new Date(block.startTime).toLocaleDateString()
+                            : block.date
+                            ? new Date(block.date).toLocaleDateString()
+                            : "Invalid Date"}
+                        </div>
+                        <div className="flex items-center text-gray-600 dark:text-gray-400">
+                          <Clock className="h-4 w-4 mr-2" />
+                          {block.startTime && block.endTime
+                            ? `${new Date(block.startTime).toLocaleTimeString(
+                                "en-US",
+                                {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  hour12: false,
+                                }
+                              )} - ${new Date(block.endTime).toLocaleTimeString(
+                                "en-US",
+                                {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  hour12: false,
+                                }
+                              )}`
+                            : `${block.time || "Unknown"} - ${
+                                block.endTime || "Unknown"
+                              }`}{" "}
+                          ({block.duration} min)
+                        </div>
                       </div>
-                      <div className="flex items-center text-gray-600 dark:text-gray-400">
-                        <Clock className="h-4 w-4 mr-2" />
-                        {block.startTime} - {block.endTime} ({block.duration}{" "}
-                        min)
-                      </div>
-                    </div>
 
-                    {/* Action Buttons */}
-                    <div className="grid grid-cols-2 gap-2">
-                      {block.status === "scheduled" && (
-                        <>
-                          <button
-                            onClick={() =>
-                              updateSessionStatus(block._id, "in-progress")
-                            }
-                            className="flex items-center justify-center px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
-                          >
-                            <Play className="h-4 w-4 mr-1" />
-                            Start
-                          </button>
-                          <button
-                            onClick={() =>
-                              updateSessionStatus(block._id, "missed")
-                            }
-                            className="flex items-center justify-center px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
-                          >
-                            <X className="h-4 w-4 mr-1" />
-                            Miss
-                          </button>
-                        </>
-                      )}
-                      {block.status === "in-progress" && (
-                        <>
-                          <button
-                            onClick={() =>
-                              updateSessionStatus(block._id, "completed")
-                            }
-                            className="flex items-center justify-center px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
-                          >
-                            <Check className="h-4 w-4 mr-1" />
-                            Complete
-                          </button>
+                      {/* Action Buttons */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {isCompleted ? (
+                          // Completed Subject - Show disabled completion message
+                          <div className="col-span-2 flex items-center justify-center px-3 py-2 bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 rounded-lg text-sm font-medium">
+                            <Star className="h-4 w-4 mr-2 fill-current" />
+                            Subject Complete
+                          </div>
+                        ) : block.status === "scheduled" ? (
+                          // Active Subject - Show normal buttons
+                          <>
+                            <button
+                              onClick={() =>
+                                updateSessionStatus(block._id, "in-progress")
+                              }
+                              className="flex items-center justify-center px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+                            >
+                              <Play className="h-4 w-4 mr-1" />
+                              Start
+                            </button>
+                            <button
+                              onClick={() =>
+                                updateSessionStatus(block._id, "missed")
+                              }
+                              className="flex items-center justify-center px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
+                            >
+                              <X className="h-4 w-4 mr-1" />
+                              Miss
+                            </button>
+                          </>
+                        ) : block.status === "in-progress" ? (
+                          <>
+                            <button
+                              onClick={() =>
+                                updateSessionStatus(block._id, "completed")
+                              }
+                              className="flex items-center justify-center px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
+                            >
+                              <Check className="h-4 w-4 mr-1" />
+                              Complete
+                            </button>
+                            <button
+                              onClick={() =>
+                                updateSessionStatus(block._id, "scheduled")
+                              }
+                              className="flex items-center justify-center px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm"
+                            >
+                              <Pause className="h-4 w-4 mr-1" />
+                              Pause
+                            </button>
+                          </>
+                        ) : block.status === "completed" ||
+                          block.status === "missed" ? (
                           <button
                             onClick={() =>
                               updateSessionStatus(block._id, "scheduled")
                             }
-                            className="flex items-center justify-center px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm"
+                            className="col-span-2 flex items-center justify-center px-3 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm"
                           >
-                            <Pause className="h-4 w-4 mr-1" />
-                            Pause
+                            <RotateCcw className="h-4 w-4 mr-2" />
+                            Reschedule
                           </button>
-                        </>
-                      )}
-                      {(block.status === "completed" ||
-                        block.status === "missed") && (
-                        <button
-                          onClick={() =>
-                            updateSessionStatus(block._id, "scheduled")
-                          }
-                          className="col-span-2 flex items-center justify-center px-3 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm"
-                        >
-                          <RotateCcw className="h-4 w-4 mr-2" />
-                          Reschedule
-                        </button>
-                      )}
+                        ) : null}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {filteredBlocks.length === 0 && (
@@ -508,9 +823,10 @@ const SchedulePage: React.FC = () => {
                   No sessions found
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400">
-                  {searchTerm || filterStatus !== "all"
+                  {searchTerm ||
+                  (filterStatus !== "active" && filterStatus !== "all")
                     ? "Try adjusting your search or filter criteria."
-                    : "No sessions scheduled for this period."}
+                    : "No active sessions scheduled for this period."}
                 </p>
               </div>
             )}
@@ -538,155 +854,6 @@ const SchedulePage: React.FC = () => {
             >
               Generate Schedule with AI
             </button>
-          </div>
-        )}
-
-        {/* Manual Schedule Creation Modal */}
-        {showManualForm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Create Manual Schedule
-                </h3>
-                <button
-                  onClick={() => setShowManualForm(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Schedule Name
-                  </label>
-                  <input
-                    type="text"
-                    value={manualForm.name}
-                    onChange={(e) =>
-                      setManualForm({ ...manualForm, name: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                    placeholder="e.g., Weekly Study Plan"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Start Date
-                    </label>
-                    <input
-                      type="date"
-                      value={manualForm.start_date}
-                      onChange={(e) =>
-                        setManualForm({
-                          ...manualForm,
-                          start_date: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      End Date
-                    </label>
-                    <input
-                      type="date"
-                      value={manualForm.end_date}
-                      onChange={(e) =>
-                        setManualForm({
-                          ...manualForm,
-                          end_date: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Daily Study Hours
-                  </label>
-                  <input
-                    type="number"
-                    value={manualForm.daily_hours}
-                    onChange={(e) =>
-                      setManualForm({
-                        ...manualForm,
-                        daily_hours: parseInt(e.target.value) || 4,
-                      })
-                    }
-                    min="1"
-                    max="12"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Select Subjects
-                  </label>
-                  <div className="max-h-40 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2">
-                    {subjects.map((subject) => (
-                      <label
-                        key={subject._id}
-                        className="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={manualForm.subjectIds.includes(subject._id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setManualForm((prev) => ({
-                                ...prev,
-                                subjectIds: [...prev.subjectIds, subject._id],
-                              }));
-                            } else {
-                              setManualForm((prev) => ({
-                                ...prev,
-                                subjectIds: prev.subjectIds.filter(
-                                  (id) => id !== subject._id
-                                ),
-                              }));
-                            }
-                          }}
-                          className="mr-3 rounded text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-gray-900 dark:text-white">
-                          {subject.name}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={() => setShowManualForm(false)}
-                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={createManualSchedule}
-                  disabled={
-                    !manualForm.name ||
-                    !manualForm.start_date ||
-                    !manualForm.end_date ||
-                    manualForm.subjectIds.length === 0
-                  }
-                  className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white rounded-lg hover:from-indigo-600 hover:to-cyan-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Create Schedule
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </div>
