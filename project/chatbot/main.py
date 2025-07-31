@@ -116,15 +116,165 @@ def clear_conversation_state(user_id: str):
     if user_id in conversation_states:
         del conversation_states[user_id]
 
-def show_main_menu():
-    """Show main menu options"""
+async def show_intelligent_welcome(user_id: str = None, auth_token: str = None):
+    """Show intelligent welcome with contextual suggestions based on user data"""
+    try:
+        # Get current time for contextual greetings
+        current_hour = datetime.now().hour
+        if current_hour < 12:
+            greeting = "Good morning"
+        elif current_hour < 17:
+            greeting = "Good afternoon"
+        else:
+            greeting = "Good evening"
+        
+        # Base welcome message
+        welcome_msg = f"🤖 **{greeting}! I'm your AI Study Assistant.**\n\n"
+        welcome_msg += "I understand natural language, so just tell me what you'd like to do!\n\n"
+        
+        # Get user context for smart suggestions
+        contextual_suggestions = []
+        smart_tips = []
+        
+        try:
+            if user_id and user_id != "anonymous":
+                # Try to fetch user data for contextual suggestions
+                user_data = await backend_client.get_user_context(user_id, auth_token)
+                if user_data:
+                    # Generate contextual suggestions based on user data
+                    contextual_suggestions, smart_tips = generate_contextual_suggestions(user_data)
+        except Exception as e:
+            logger.warning(f"Could not fetch user context: {e}")
+        
+        # Default suggestions if no user context
+        if not contextual_suggestions:
+            contextual_suggestions = [
+                "Schedule 2 hours for math today",
+                "What should I study next?",
+                "Show my progress in physics",
+                "Add a new subject called Chemistry",
+                "How much time did I study this week?"
+            ]
+        
+        if not smart_tips:
+            smart_tips = [
+                "💡 **Try natural language**: \"Schedule math for tomorrow morning\"",
+                "🎯 **Ask for recommendations**: \"What should I study right now?\"",
+                "📊 **Check progress**: \"How am I doing in physics?\"",
+                "⚡ **Quick actions**: Type 'show menu' to see all options"
+            ]
+        
+        # Build response with tips and suggestions
+        welcome_msg += "**Here are some ways to get started:**\n"
+        for tip in smart_tips[:3]:  # Show max 3 tips
+            welcome_msg += f"{tip}\n"
+        
+        return ChatResponse(
+            response=welcome_msg,
+            intent="intelligent_welcome",
+            confidence=1.0,
+            entities={},
+            actions=[],
+            conversation_id=f"welcome_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            quick_actions=[],  # No buttons - encourage natural language
+            suggestions=contextual_suggestions
+        )
+    except Exception as e:
+        logger.error(f"Error generating intelligent welcome: {e}")
+        # Fallback to simple welcome
+        return show_simple_welcome()
+
+def generate_contextual_suggestions(user_data: dict) -> tuple[list, list]:
+    """Generate smart suggestions based on user context"""
+    suggestions = []
+    tips = []
+    
+    try:
+        subjects = user_data.get('subjects', [])
+        recent_sessions = user_data.get('recent_sessions', [])
+        upcoming_deadlines = user_data.get('upcoming_deadlines', [])
+        
+        # Contextual suggestions based on data
+        if upcoming_deadlines:
+            nearest_deadline = upcoming_deadlines[0]
+            days_left = (datetime.fromisoformat(nearest_deadline['deadline']) - datetime.now()).days
+            if days_left <= 3:
+                suggestions.append(f"Focus on {nearest_deadline['name']} - deadline in {days_left} days!")
+                tips.append(f"⚠️ **Urgent**: {nearest_deadline['name']} deadline approaching!")
+        
+        if subjects:
+            # Find subjects with low progress
+            low_progress_subjects = [s for s in subjects if s.get('progress', 0) < 30]
+            if low_progress_subjects:
+                subject_name = low_progress_subjects[0]['name']
+                suggestions.append(f"Work on {subject_name} - needs attention")
+        
+        # Check for inactive subjects
+        if recent_sessions:
+            studied_subjects = {s['subject_name'] for s in recent_sessions[-5:]}  # Last 5 sessions
+            all_subjects = {s['name'] for s in subjects}
+            neglected = all_subjects - studied_subjects
+            if neglected:
+                subject_name = list(neglected)[0]
+                suggestions.append(f"Haven't studied {subject_name} recently")
+                tips.append(f"🕒 **Reminder**: You haven't studied {subject_name} in a while")
+        
+        # Time-based suggestions
+        current_hour = datetime.now().hour
+        if 9 <= current_hour <= 11:
+            suggestions.append("Perfect time for focused math work")
+            tips.append("🌅 **Morning boost**: Great time for analytical subjects!")
+        elif 14 <= current_hour <= 16:
+            suggestions.append("Good afternoon for creative subjects")
+            tips.append("☀️ **Afternoon energy**: Ideal for creative or discussion-based learning")
+        
+        # Add variety in suggestions
+        suggestions.extend([
+            "What's the most important thing to study today?",
+            "Create a schedule for this week",
+            "Show my learning analytics"
+        ])
+        
+        # Add helpful tips
+        tips.extend([
+            "💬 **Natural conversation**: Ask me anything like 'What should I focus on?'",
+            "🚀 **Smart scheduling**: I'll prioritize based on deadlines and difficulty",
+            "📈 **Progress tracking**: I analyze your study patterns to help you improve"
+        ])
+        
+    except Exception as e:
+        logger.error(f"Error generating contextual suggestions: {e}")
+    
+    return suggestions[:6], tips[:4]  # Limit suggestions and tips
+
+def show_simple_welcome():
+    """Simple fallback welcome message"""
     return ChatResponse(
-        response="🎯 **Welcome to your AI Learning Scheduler!** How can I help you today?\n\nChoose one of the main options below:",
+        response="🤖 **Hi there! I'm your AI Study Assistant.**\n\nI understand natural language - just tell me what you'd like to do!\n\n💡 **Try saying**: \"Schedule math for tomorrow\" or \"What should I study?\"",
+        intent="simple_welcome",
+        confidence=1.0,
+        entities={},
+        actions=[],
+        conversation_id=f"simple_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        quick_actions=[],
+        suggestions=[
+            "What should I study today?",
+            "Schedule 2 hours for math",
+            "Show my progress",
+            "Add a new subject",
+            "Create a study plan"
+        ]
+    )
+
+def show_main_menu():
+    """Show structured main menu options (accessible via 'show menu' command)"""
+    return ChatResponse(
+        response="📋 **Main Menu Options**\n\nHere are all the things I can help you with:",
         intent="main_menu",
         confidence=1.0,
         entities={},
         actions=[],
-        conversation_id=f"main_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        conversation_id=f"menu_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         quick_actions=[
             {"id": "add-subject", "label": "📝 Add New Subject", "icon": "plus", "message": "I want to add a new subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
             {"id": "create-schedule", "label": "📅 Create Schedule", "icon": "calendar", "message": "I want to create a study schedule", "color": "bg-green-600 hover:bg-green-700 text-white"},
@@ -133,9 +283,10 @@ def show_main_menu():
         ],
         suggestions=[
             "Add a new subject",
-            "Create study schedule",
+            "Create study schedule", 
             "Show my schedules",
-            "How much progress have I made?"
+            "How much progress have I made?",
+            "What should I study next?"
         ]
     )
 
@@ -506,10 +657,16 @@ async def generate_response(
     if not conversation_id:
         conversation_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{user_data['user_id']}"
     
-    # Check for main menu triggers
-    if any(keyword in message.lower() for keyword in ["main menu", "start over", "help", "what can you do"]):
+    # Check for main menu triggers (keep structured menu accessible)
+    if any(keyword in message.lower() for keyword in ["show menu", "main menu", "menu"]):
         clear_conversation_state(user_id)
         return show_main_menu()
+    
+    # Check for help/start over triggers (show intelligent welcome)
+    if any(keyword in message.lower() for keyword in ["start over", "help", "what can you do", "hello", "hi"]):
+        clear_conversation_state(user_id)
+        auth_token = user_data.get('auth_token') if user_data else None
+        return await show_intelligent_welcome(user_id, auth_token)
     
     # Check for specific action triggers (prioritize these over intent classification)
     message_lower = message.lower().strip()
@@ -591,16 +748,19 @@ async def generate_response(
             entities={},
             actions=[],
             conversation_id=conversation_id,
-            quick_actions=[
-                {"id": "add-subject", "label": "📝 Add Subject", "icon": "plus", "message": "add subject", "color": "bg-blue-600 hover:bg-blue-700 text-white"},
-                {"id": "create-schedule", "label": "📅 Create Schedule", "icon": "calendar", "message": "generate schedule", "color": "bg-green-600 hover:bg-green-700 text-white"},
-                {"id": "get-recommendation", "label": "🎯 Get Recommendation", "icon": "target", "message": "what should I study", "color": "bg-purple-600 hover:bg-purple-700 text-white"},
-                {"id": "main-menu", "label": "🏠 Main Menu", "icon": "home", "message": "main menu", "color": "bg-gray-600 hover:bg-gray-700 text-white"}
-            ],
-            suggestions=["Add subject", "Generate schedule", "What should I study?", "Main menu"]
+            quick_actions=[],  # No buttons - encourage natural language
+            suggestions=[
+                "Add a new subject called Biology",
+                "Create a schedule for this week", 
+                "What should I study right now?",
+                "Show my progress in mathematics",
+                "Show menu"
+            ]
         )
     else:
-        # Show main menu for unclear requests
+        # Show intelligent welcome for unclear requests
+        auth_token = user_data.get('auth_token') if user_data else None
+        return await show_intelligent_welcome(user_data.get('user_id') if user_data else None, auth_token)
         return show_main_menu()
 
 async def handle_conversation_flow(message: str, user_id: str, conversation_state: dict, user_data: dict):
@@ -652,9 +812,10 @@ async def handle_conversation_flow(message: str, user_id: str, conversation_stat
     elif step == "feedback_completion":
         return await handle_feedback_completion_step(message, user_id, data, user_data)
     
-    # Fallback to main menu
+    # Fallback to intelligent welcome
     clear_conversation_state(user_id)
-    return show_main_menu()
+    auth_token = user_data.get('auth_token') if user_data else None
+    return await show_intelligent_welcome(user_data.get('user_id') if user_data else None, auth_token)
 
 # ================== SUBJECT ADDITION FLOW ==================
 

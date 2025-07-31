@@ -366,6 +366,79 @@ class BackendClient:
             logger.error(f"Error fetching analytics for user {user_id}: {e}")
             return None
 
+    async def get_user_context(self, user_id: str, auth_token: str = None) -> Optional[Dict[str, Any]]:
+        """Get comprehensive user context for intelligent suggestions"""
+        try:
+            context = {}
+            
+            # Get user subjects
+            try:
+                if auth_token:
+                    subjects = await self.get_user_subjects(user_id, auth_token)
+                    context['subjects'] = subjects
+                else:
+                    context['subjects'] = []
+            except Exception as e:
+                logger.warning(f"Could not fetch subjects for user context: {e}")
+                context['subjects'] = []
+            
+            # Get recent sessions (last 10)
+            try:
+                if auth_token:
+                    sessions_response = await self.make_request(
+                        'GET',
+                        f'/sessions?limit=10&sort=-createdAt',
+                        auth_token=auth_token
+                    )
+                    recent_sessions = sessions_response.get('sessions', [])
+                    context['recent_sessions'] = recent_sessions
+                else:
+                    context['recent_sessions'] = []
+            except Exception as e:
+                logger.warning(f"Could not fetch recent sessions: {e}")
+                context['recent_sessions'] = []
+            
+            # Check for upcoming deadlines
+            try:
+                upcoming_deadlines = []
+                if context.get('subjects'):
+                    for subject in context['subjects']:
+                        if subject.get('deadline'):
+                            deadline_date = datetime.fromisoformat(subject['deadline'].replace('Z', '+00:00'))
+                            days_until = (deadline_date - datetime.now()).days
+                            if days_until >= 0 and days_until <= 7:  # Next 7 days
+                                upcoming_deadlines.append({
+                                    'name': subject['name'],
+                                    'deadline': subject['deadline'],
+                                    'days_until': days_until,
+                                    'progress': subject.get('progress', 0)
+                                })
+                
+                # Sort by nearest deadline
+                upcoming_deadlines.sort(key=lambda x: x['days_until'])
+                context['upcoming_deadlines'] = upcoming_deadlines
+                
+            except Exception as e:
+                logger.warning(f"Could not process deadlines: {e}")
+                context['upcoming_deadlines'] = []
+            
+            # Get user analytics for additional context
+            try:
+                if auth_token:
+                    analytics = await self.get_user_analytics(user_id, auth_token)
+                    context['analytics'] = analytics
+                else:
+                    context['analytics'] = {}
+            except Exception as e:
+                logger.warning(f"Could not fetch analytics for context: {e}")
+                context['analytics'] = {}
+            
+            return context
+            
+        except Exception as e:
+            logger.error(f"Error fetching user context for {user_id}: {e}")
+            return None
+
 # Utility function to handle datetime serialization
 from datetime import timedelta
 

@@ -129,42 +129,49 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ isOpen, onToggle }) => {
         // Check chatbot health on mount
         await checkChatbotHealth();
 
-        // Load conversation history from storage
-        const savedMessages = chatStorage.getConversationHistory();
-        if (savedMessages.length > 0) {
-          setMessages(savedMessages);
-        } else {
-          // Send initial main menu request to backend
-          try {
-            const response = await chatbotService.sendMessage({
-              message: "main menu",
-              user_id: user?._id || "anonymous",
-              conversation_id: undefined,
-            });
+        // Clear any existing conversation history to ensure fresh intelligent welcome
+        chatStorage.clearConversationHistory();
 
-            const botMessage = createChatMessage(response.response, "bot", {
-              intent: response.intent,
-              confidence: response.confidence,
-              entities: response.entities,
-              quickActions: response.quick_actions || [],
-              suggestions: response.suggestions || [],
-            });
-            setMessages([botMessage]);
-          } catch (error) {
-            console.error("❌ Failed to load main menu:", error);
-            // Fallback to simple welcome message
-            const fallbackMessage = createChatMessage(
-              `🤖 **Welcome to your AI Study Assistant!**
+        // Always show intelligent welcome on fresh start (don't load old conversations)
+        // This ensures users always see the natural language-focused interface first
+        try {
+          const response = await chatbotService.sendMessage({
+            message: "hello", // Trigger intelligent welcome
+            user_id: user?._id || "anonymous",
+            conversation_id: undefined,
+          });
 
-I'm here to help you with your study planning. How can I assist you today?`,
-              "bot",
-              {
-                quickActions: [],
-                suggestions: [],
-              }
-            );
-            setMessages([fallbackMessage]);
-          }
+          const botMessage = createChatMessage(response.response, "bot", {
+            intent: response.intent,
+            confidence: response.confidence,
+            entities: response.entities,
+            quickActions: response.quick_actions || [],
+            suggestions: response.suggestions || [],
+          });
+          setMessages([botMessage]);
+        } catch (error) {
+          console.error("❌ Failed to load intelligent welcome:", error);
+          // Fallback to simple welcome message
+          const fallbackMessage = createChatMessage(
+            `🤖 **Hi there! I'm your AI Study Assistant.**
+
+I understand natural language - just tell me what you'd like to do!
+
+💡 **Try saying**: "Schedule math for tomorrow" or "What should I study?"`,
+            "bot",
+            {
+              intent: "simple_welcome",
+              quickActions: [],
+              suggestions: [
+                "What should I study today?",
+                "Schedule 2 hours for math",
+                "Show my progress",
+                "Add a new subject",
+                "Show menu",
+              ],
+            }
+          );
+          setMessages([fallbackMessage]);
         }
       } catch (error) {
         console.error("❌ Chat initialization error:", error);
@@ -465,10 +472,20 @@ Welcome back to your AI Study Assistant! How can I assist you today?`,
   };
 
   // Get current quick actions (default or from latest bot message)
-  const currentQuickActions =
-    messages.length > 0
-      ? messages[messages.length - 1]?.quickActions || defaultQuickActions
-      : defaultQuickActions;
+  // Hide quick actions for intelligent welcome to encourage natural language
+  const currentQuickActions = (() => {
+    if (messages.length === 0) return defaultQuickActions;
+
+    const lastMessage = messages[messages.length - 1];
+    const isIntelligentWelcome =
+      lastMessage?.intent === "intelligent_welcome" ||
+      lastMessage?.intent === "simple_welcome";
+
+    // Hide quick actions for intelligent welcome to encourage natural language
+    if (isIntelligentWelcome) return [];
+
+    return lastMessage?.quickActions || defaultQuickActions;
+  })();
 
   // Get current suggestions from latest bot message, but filter out duplicates
   const currentSuggestions = (() => {
@@ -694,34 +711,42 @@ Welcome back to your AI Study Assistant! How can I assist you today?`,
             </div>
           )}
 
-          {/* Quick Actions */}
-          <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
-            <div className="flex flex-wrap gap-2">
-              <Suspense
-                fallback={
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4].map((i) => (
-                      <div
-                        key={i}
-                        className="h-8 w-20 bg-gray-300 dark:bg-gray-600 rounded animate-pulse"
-                      ></div>
-                    ))}
-                  </div>
-                }
-              >
-                {currentQuickActions.slice(0, 4).map((action) => (
-                  <QuickActionButton
-                    key={action.id}
-                    action={action}
-                    onClick={() => handleQuickAction(action)}
-                  />
-                ))}
-              </Suspense>
+          {/* Quick Actions - Only show when available and not intelligent welcome */}
+          {currentQuickActions.length > 0 && (
+            <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+              <div className="flex flex-wrap gap-2">
+                <Suspense
+                  fallback={
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4].map((i) => (
+                        <div
+                          key={i}
+                          className="h-8 w-20 bg-gray-300 dark:bg-gray-600 rounded animate-pulse"
+                        ></div>
+                      ))}
+                    </div>
+                  }
+                >
+                  {currentQuickActions.slice(0, 4).map((action) => (
+                    <QuickActionButton
+                      key={action.id}
+                      action={action}
+                      onClick={() => handleQuickAction(action)}
+                    />
+                  ))}
+                </Suspense>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Input Area */}
           <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            {/* Natural Language Hint */}
+            <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+              <Brain className="w-3 h-3" />
+              <span>I understand natural language - ask me anything!</span>
+            </div>
+
             <div className="flex items-end space-x-2">
               <div className="flex-1 relative">
                 <input
@@ -730,7 +755,7 @@ Welcome back to your AI Study Assistant! How can I assist you today?`,
                   value={inputText}
                   onChange={handleInputChange}
                   onKeyPress={handleKeyPress}
-                  placeholder="Type your message..."
+                  placeholder='Try: "Schedule math for tomorrow" or "What should I study?"'
                   disabled={isLoading}
                   className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none disabled:opacity-50 disabled:cursor-not-allowed"
                   maxLength={500}
